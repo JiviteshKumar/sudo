@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">sudo</string>
+    <string name="widget_name">sudo headlines</string>
+    <string name="widget_desc">Latest verified tech headlines</string>
+</resources>
