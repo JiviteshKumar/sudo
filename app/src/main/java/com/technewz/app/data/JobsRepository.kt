@@ -7,7 +7,9 @@ import com.technewz.app.util.ScamFilter
 import com.technewz.app.util.Skills
 import com.technewz.app.work.FollowUpWorker
 import com.technewz.app.work.Notifications
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
@@ -25,10 +27,10 @@ class JobsRepository(
     data class RefreshResult(val total: Int, val newCount: Int, val failedSources: List<String>)
 
     /** Jobs change slowly and the APIs are free/public, so we sync them at most hourly unless forced. */
-    suspend fun refresh(force: Boolean = false): RefreshResult? = coroutineScope {
+    suspend fun refresh(force: Boolean = false): RefreshResult? = withContext(Dispatchers.Default) {
         val s = settings.current()
         val now = System.currentTimeMillis()
-        if (!force && now - s.lastJobsRefresh < TimeUnit.MINUTES.toMillis(55)) return@coroutineScope null
+        if (!force && now - s.lastJobsRefresh < TimeUnit.MINUTES.toMillis(55)) return@withContext null
 
         val sources = buildList<Pair<String, suspend () -> List<RawJob>>> {
             add("Remotive" to { JobSources.remotive() })
@@ -80,7 +82,7 @@ class JobsRepository(
     }
 
     /** Re-score all jobs after the profile changes. */
-    suspend fun rescore() {
+    suspend fun rescore() = withContext(Dispatchers.Default) {
         val userSkills = Skills.normalize(settings.currentProfile().skills)
         dao.upsertAll(dao.all().map { j ->
             val m = Skills.match(userSkills, j.title + "\n" + j.description)

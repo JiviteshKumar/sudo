@@ -54,9 +54,17 @@ object ResearchSources {
         return "submittedDate:[${stamp.format(now.minusSeconds(daysAgoFrom * 86400L))} TO ${stamp.format(now.minusSeconds(daysAgoTo * 86400L))}]"
     }
 
-    /** Number of arXiv papers whose abstract contains [p], submitted between [fromDaysAgo] and [toDaysAgo]. */
+    /**
+     * arXiv categories that make up "the AI / ML / data-science field". Counts and explanation sources are
+     * restricted to these, so a term that is common elsewhere (e.g. software engineering) is not treated as an
+     * AI/ML/DS trend.
+     */
+    val aiCategories = listOf("cs.LG", "cs.AI", "cs.CL", "cs.CV", "stat.ML", "cs.IR", "cs.NE", "cs.RO", "cs.MA")
+    private val aiFilter = aiCategories.joinToString(" OR ", "(", ")") { "cat:$it" }
+
+    /** Number of AI/ML/DS arXiv papers whose abstract contains [p], submitted between [fromDaysAgo] and [toDaysAgo]. */
     suspend fun arxivCount(p: String, fromDaysAgo: Int, toDaysAgo: Int): Int =
-        total(arxiv("${phrase(p)} AND ${window(fromDaysAgo, toDaysAgo)}", 1))
+        total(arxiv("${phrase(p)} AND $aiFilter AND ${window(fromDaysAgo, toDaysAgo)}", 1))
 
     data class Paper(val title: String, val abstract: String, val url: String, val published: Long)
 
@@ -65,13 +73,22 @@ object ResearchSources {
     }
 
     /** Most recent papers mentioning [p] (abstracts are used as explanation sources). */
-    suspend fun arxivRecent(p: String, days: Int, max: Int): List<Paper> = papers(arxiv("${phrase(p)} AND ${window(days, 0)}", max))
+    suspend fun arxivRecent(p: String, days: Int, max: Int): List<Paper> =
+        papers(arxiv("${phrase(p)} AND $aiFilter AND ${window(days, 0)}", max))
 
-    /** Earliest paper mentioning [p] and the all-time total. */
-    suspend fun arxivFirst(p: String): Pair<Paper?, Int> {
-        val xml = arxiv(phrase(p), 1, sortAsc = true)
-        return papers(xml).firstOrNull() to total(xml)
-    }
+    // ------------------------------------------------------------- OpenAlex (all scholarly works, independent of arXiv)
+    /** Number of scholarly works per publication year whose title or abstract contains the exact phrase. */
+    suspend fun openAlexYears(p: String): Map<Int, Int>? = runCatching {
+        val q = URLEncoder.encode("\"" + p.replace("\"", "") + "\"", "UTF-8")
+        val json = Http.get("https://api.openalex.org/works?filter=title_and_abstract.search:$q&group_by=publication_year&per-page=200")
+        AppJson.parseToJsonElement(json).jsonObject["group_by"]!!.jsonArray.associate {
+            val o = it.jsonObject
+            o.s("key").toInt() to o.s("count").toInt()
+        }
+    }.getOrNull()
+
+    fun openAlexUrl(p: String) =
+        "https://openalex.org/works?filter=title_and_abstract.search:" + URLEncoder.encode("\"" + p.replace("\"", "") + "\"", "UTF-8")
 
     /** A spread-out sample of AI/ML/NLP papers from 6–18 months ago, used as the "already known" baseline. */
     suspend fun arxivBaseline(perWindow: Int = 300): List<Paper> {

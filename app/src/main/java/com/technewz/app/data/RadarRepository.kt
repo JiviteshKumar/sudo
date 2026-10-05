@@ -9,7 +9,9 @@ import com.technewz.app.net.ResearchSources
 import com.technewz.app.net.RssParser
 import com.technewz.app.util.Text
 import com.technewz.app.work.Notifications
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
@@ -37,17 +39,23 @@ class RadarRepository(
 
     data class Result(val candidates: Int, val checked: Int, val accepted: List<String>, val rejected: Int)
 
-    suspend fun refresh(force: Boolean = false, maxChecks: Int = 15, onProgress: (String) -> Unit = {}): Result? = coroutineScope {
+    suspend fun refresh(force: Boolean = false, maxChecks: Int = 15, onProgress: (String) -> Unit = {}): Result? = withContext(Dispatchers.Default) {
         val s = settings.current()
         val now = System.currentTimeMillis()
-        if (!force && now - s.lastRadarRefresh < TimeUnit.HOURS.toMillis(12)) return@coroutineScope null
+        // When the verification rules change, results made under the old rules are discarded and re-checked.
+        val rulesChanged = s.radarVersion < RULES_VERSION
+        if (rulesChanged) {
+            dao.deleteAll()
+            settings.update { it.copy(radarVersion = RULES_VERSION) }
+        }
+        if (!force && !rulesChanged && now - s.lastRadarRefresh < TimeUnit.HOURS.toMillis(12)) return@withContext null
 
         onProgress("Reading new research, news, repos and job posts…")
         val recent = recentCorpus(now)
         val baseline = baselineCorpus(now)
         if (baseline.size < 300) {
             onProgress("Couldn't load the research baseline — will retry later")
-            return@coroutineScope Result(0, 0, emptyList(), 0)
+            return@withContext Result(0, 0, emptyList(), 0)
         }
         val candidates = TermMiner.candidates(recent, baseline)
         val known = dao.all().associateBy { it.key }
@@ -129,35 +137,40 @@ class RadarRepository(
 
     // ------------------------------------------------------------------ verification: concepts
 
-    private suspend fun verifyConcept(c: TermMiner.Candidate, now: Long, previous: TermEntity?): TermEntity {
-        val q = c.longForm
-        val r30 = ResearchSources.arxivCount(q, 30, 0)
-        val prior = ResearchSources.arxivCount(q, 180, 31)
-        val (first, total) = ResearchSources.arxivFirst(q)
-        val firstSeen = first?.published?.takeIf { it > 0 }
-        val growth = (r30 / 30.0 + 0.01) / (prior / 150.0 + 0.01)
-        val isNew = firstSeen != null && now - firstSeen < 365 * day && r30 >= 2
-        val isRising = r30 >= 5 && growth >= 1.5
-        val counts = "arXiv: $r30 papers in the last 30 days vs $prior in the 150 days before; $total all-time" +
-            (firstSeen?.let { "; earliest arXiv use of the phrase ${Text.timeAgo(it, now)}" } ?: "")
+    private suspend fun verifyConcept(c: TermMiner.Candidate, now: Long, previous: TermEntity?): TermEntity? {
+        // Several spellings may exist; verify the one the literature actually uses most.
+        val histories = c.variants.take(4).mapNotNull { v -> ResearchSources.openAlexYears(v)?.let { v to it } }
+        if (histories.isEmpty()) return null // source unreachable: retry next run
+        val (q, perYear) = histories.maxBy { it.second.values.sum() }
+        val today = java.time.LocalDate.now()
+        val year = today.year
 
-        fun rejected(reason: String) = base(c, now, previous).copy(
-            status = TermStatus.REJECTED, reason = reason, papers30 = r30, papersPrior = prior, papersTotal = total, firstSeen = firstSeen,
-        )
-        if (total == 0) return rejected("Not found in arXiv")
-        if (!isNew && !isRising) return rejected("Not new or rising — $counts")
-        // Maturity check: a long-established concept with a temporary bump is not an upcoming skill.
-        if (!isNew) {
-            val yearly = r30 * 12
-            if (total > 2 * yearly) return rejected("Established — $total papers already exist, over two years' worth at today's rate; $counts")
-            val then = ResearchSources.arxivCount(q, 1460, 1095)
-            if (then >= 0.25 * yearly) return rejected("Established — $then papers 3–4 years ago; $counts")
-        }
+        // 1. When did it emerge? OpenAlex counts every scholarly work (not just arXiv) per year. A term must have
+        //    surged within the last 3 years; steady decades-long use (e.g. "software development kit") is rejected.
+        val emerged = TermMiner.emergenceYear(perYear, year)
+        val history = "OpenAlex works per year: " + (year - 5..year).joinToString(", ") { "$it: ${perYear[it] ?: 0}" }
+        fun rejected(reason: String) = base(c, now, previous).copy(status = TermStatus.REJECTED, reason = reason)
+        if (emerged == null) return rejected("Established or too little evidence — never surged above its own history. $history")
+        if (emerged < year - 3) return rejected("Established — took off in $emerged. $history")
+
+        // 2. Is it active in AI/ML/DS research right now? (arXiv, AI/ML/DS categories only)
+        val r30 = ResearchSources.arxivCount(q, 30, 0)
+        if (r30 < 5) return rejected("Too little AI/ML research activity — $r30 AI/ML papers on arXiv in the last 30 days. $history")
+        val prior = ResearchSources.arxivCount(q, 180, 31)
+
+        // 3. Still growing? This year's pace vs last year (OpenAlex) or this month vs the 5 months before (arXiv).
+        val thisYearPace = (perYear[year] ?: 0) * 365.0 / today.dayOfYear
+        val lastYear = perYear[year - 1] ?: 0
+        val growth = (r30 / 30.0 + 0.01) / (prior / 150.0 + 0.01)
+        if (thisYearPace < lastYear && growth < 1.2) return rejected("Not growing any more — $history; arXiv AI/ML: $r30 papers in 30 days vs $prior in the 150 days before")
+        val isNew = emerged >= year - 1
+        val total = perYear.values.sum()
+        val firstSeen = java.time.LocalDate.of(emerged, 1, 1).atStartOfDay().toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+        val counts = "Took off in $emerged ($history). arXiv AI/ML: $r30 papers in the last 30 days vs $prior in the 150 days before"
 
         // Explanation strictly from sources: Wikipedia (if a page exists for exactly this term) or a paper/news sentence.
         val recentPapers = ResearchSources.arxivRecent(q, 90, 25)
         val sourceDocs = recentPapers.map { TermMiner.Doc(it.url, it.title, it.abstract, it.url, "arXiv", "paper", it.published) } +
-            listOfNotNull(first?.let { TermMiner.Doc(it.url, it.title, it.abstract, it.url, "arXiv", "paper", it.published) }) +
             c.docs.filter { it.type == "paper" || it.type == "news" }
         val wiki = ResearchSources.wikipediaFor(q, c.shortForm)
         val def = TermMiner.definition(q, c.shortForm, sourceDocs)
@@ -172,8 +185,8 @@ class RadarRepository(
         val news = c.docs.filter { it.type == "news" }
         val repos = c.docs.filter { it.type == "repo" }
         val evidence = buildList {
-            first?.let { add(Evidence(it.title, it.url, "arXiv · first paper", it.published, "paper")) }
-            recentPapers.filter { it.url != first?.url }.take(3).forEach { add(Evidence(it.title, it.url, "arXiv", it.published, "paper")) }
+            add(Evidence("Publication history of “$q” ($total works; took off in $emerged)", ResearchSources.openAlexUrl(q), "OpenAlex", null, "paper"))
+            recentPapers.take(3).forEach { add(Evidence(it.title, it.url, "arXiv", it.published, "paper")) }
             news.take(3).forEach { add(Evidence(it.title, it.url, it.source, it.date, "news")) }
             repos.take(2).forEach { add(Evidence(it.title, it.url, it.source, it.date, "repo")) }
             jobs.take(3).forEach { add(Evidence("${it.title} · ${it.company}", it.url, it.source, it.date, "job")) }
@@ -192,6 +205,7 @@ class RadarRepository(
         val score = ln(1.0 + r30) * (if (isNew) 1.6 else 1.0) * (1 + ln(growth.coerceAtLeast(1.0))) +
             0.3 * ln(1.0 + jobs.size + news.size)
         return base(c, now, previous).copy(
+            term = if (c.shortForm != null) "$q (${c.shortForm})" else q,
             status = if (isNew) TermStatus.NEW else TermStatus.RISING,
             reason = counts,
             what = what.first, whatSource = what.second, whatUrl = what.third,
@@ -277,6 +291,12 @@ class RadarRepository(
             )
         }
         return out
+    }
+
+    companion object {
+        /** Bump whenever verification rules change. v2: OpenAlex emergence year + AI/ML-only arXiv counts.
+         *  v3: terms with a real presence 5–10 years ago are established, not new. */
+        const val RULES_VERSION = 4
     }
 
     fun evidenceOf(t: TermEntity): List<Evidence> = runCatching { AppJson.decodeFromString(evidenceSer, t.evidence) }.getOrDefault(emptyList())

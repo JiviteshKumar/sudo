@@ -59,6 +59,8 @@ data class AppSettings(
     val lastNewsRefresh: Long = 0,
     val lastJobsRefresh: Long = 0,
     val lastRadarRefresh: Long = 0,
+    val radarVersion: Int = 0,
+    val batteryPromptDismissed: Boolean = false,
     val lastError: String = "",
 ) {
     val hasAi: Boolean get() = geminiKey.isNotBlank()
@@ -92,6 +94,8 @@ class SettingsRepository(private val context: Context) {
         val lastNews = longPreferencesKey("last_news")
         val lastJobs = longPreferencesKey("last_jobs")
         val lastRadar = longPreferencesKey("last_radar")
+        val radarVersion = androidx.datastore.preferences.core.intPreferencesKey("radar_version")
+        val batteryPrompt = booleanPreferencesKey("battery_prompt_dismissed")
         val lastError = stringPreferencesKey("last_error")
         val profile = stringPreferencesKey("profile")
     }
@@ -126,6 +130,8 @@ class SettingsRepository(private val context: Context) {
             lastNewsRefresh = this[K.lastNews] ?: 0,
             lastJobsRefresh = this[K.lastJobs] ?: 0,
             lastRadarRefresh = this[K.lastRadar] ?: 0,
+            radarVersion = this[K.radarVersion] ?: 0,
+            batteryPromptDismissed = this[K.batteryPrompt] ?: false,
             lastError = this[K.lastError] ?: "",
         )
     }
@@ -151,6 +157,8 @@ class SettingsRepository(private val context: Context) {
             prefs[K.lastNews] = s.lastNewsRefresh
             prefs[K.lastJobs] = s.lastJobsRefresh
             prefs[K.lastRadar] = s.lastRadarRefresh
+            prefs[K.radarVersion] = s.radarVersion
+            prefs[K.batteryPrompt] = s.batteryPromptDismissed
             prefs[K.lastError] = s.lastError
         }
     }

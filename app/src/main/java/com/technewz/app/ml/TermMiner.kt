@@ -28,6 +28,8 @@ object TermMiner {
         val docs: List<Doc>,
         val baselineDf: Int,
         val score: Double,
+        /** Every spelling seen for this term (e.g. "RL with verifiable rewards" / "reinforcement learning with verifiable rewards"). */
+        val variants: List<String> = listOf(longForm),
     ) {
         val types: Set<String> get() = docs.map { it.type }.toSet()
         val display: String get() = if (shortForm != null) "$longForm ($shortForm)" else longForm
@@ -164,7 +166,11 @@ object TermMiner {
                     t.intersect(headTokens).size.toDouble() / minOf(t.size, headTokens.size) >= 0.5
                 }
                 remaining.removeAll(same)
-                result += head.copy(docs = (head.docs + same.flatMap { it.docs }).distinctBy { it.id }, score = head.score + same.sumOf { it.score } * 0.5)
+                result += head.copy(
+                    docs = (head.docs + same.flatMap { it.docs }).distinctBy { it.id },
+                    score = head.score + same.sumOf { it.score } * 0.5,
+                    variants = (head.variants + same.flatMap { it.variants }).distinctBy { normalize(it) },
+                )
             }
             result
         }
@@ -213,6 +219,27 @@ object TermMiner {
         return ln(1.0 + n) * ln(1.0 + lift) * (1 + 0.25 * (types - 1))
     }
 
+    // ---------------------------------------------------------------- when did a term emerge?
+
+    /**
+     * The year a term took off: the first recent year whose publication count is at least 5x its own
+     * historical level (median of the years 5–10 years ago) and at least [minCount]. Returns null when the
+     * term never surged, i.e. it has been in steady use for years (established) or has too little evidence.
+     * Measuring against the term's own history handles phrases that had an older, unrelated meaning.
+     *
+     * A term that already had a real presence 5–10 years ago (more than [maxPrior] works a year, or more than
+     * 2% of today's volume) is an established idea that is merely booming (e.g. differential privacy, world
+     * models), not a new one, so it returns null too.
+     */
+    fun emergenceYear(perYear: Map<Int, Int>, currentYear: Int, minCount: Int = 10, maxPrior: Int = 30): Int? {
+        val history = (currentYear - 10..currentYear - 5).map { perYear[it] ?: 0 }.sorted()
+        val baseline = (history[2] + history[3]) / 2.0
+        val current = maxOf(perYear[currentYear] ?: 0, perYear[currentYear - 1] ?: 0)
+        if (baseline > maxPrior || baseline > 0.02 * current) return null
+        val threshold = maxOf(minCount.toDouble(), 5 * baseline)
+        return (currentYear - 10..currentYear).firstOrNull { (perYear[it] ?: 0) >= threshold }
+    }
+
     // ---------------------------------------------------------------- explanation sentences
 
     private val definitionVerbs = "(is|are|refers to|denotes|describes|means|has emerged as|have emerged as|has become|is defined as|aims to|allows|enables|lets)"
@@ -235,7 +262,7 @@ object TermMiner {
     private fun mentions(sentence: String, longForm: String, shortForm: String?): Boolean {
         val n = " ${normalize(sentence)} "
         if (n.contains(" ${normalize(longForm)} ")) return true
-        return shortForm != null && Regex("(?<![A-Za-z0-9])" + Regex.escape(shortForm) + "(?![A-Za-z0-9])").containsMatchIn(sentence)
+        return shortForm != null && Regex("(?<![A-Za-z0-9-])" + Regex.escape(shortForm) + "(?![A-Za-z0-9-])").containsMatchIn(sentence)
     }
 
     /**
@@ -262,6 +289,7 @@ object TermMiner {
     fun usage(longForm: String, shortForm: String?, docs: List<Doc>, exclude: String?): Pick? =
         bestSentence(longForm, shortForm, docs) { s ->
             if (s == exclude || !application.containsMatchIn(s)) return@bestSentence null
+            if (selfReference.containsMatchIn(s)) return@bestSentence null
             // Usage should describe where it's applied, not report a benchmark number.
             if (Regex("\\d").findAll(s).count() > 2 || results.containsMatchIn(s)) return@bestSentence null
             var sc = 2.0

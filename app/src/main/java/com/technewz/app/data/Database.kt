@@ -160,6 +160,9 @@ interface TermDao {
     @Upsert
     suspend fun upsert(t: TermEntity)
 
+    @Query("DELETE FROM terms")
+    suspend fun deleteAll()
+
     @Query("DELETE FROM terms WHERE checkedAt < :before")
     suspend fun prune(before: Long)
 }
@@ -209,10 +212,26 @@ interface ArticleDao {
     suspend fun prune(before: Long)
 }
 
+/** What a job card needs — everything except the (large) description, so the list stays light. */
+data class JobListItem(
+    val id: String, val title: String, val company: String, val location: String, val isRemote: Boolean,
+    val employmentType: String, val isInternship: Boolean, val source: String, val directFromEmployer: Boolean,
+    val postedAt: Long, val salary: String?, val matchScore: Int?, val matchedSkills: String,
+    val missingSkills: String, val scamFlags: String,
+)
+
+fun JobEntity.toListItem() = JobListItem(
+    id, title, company, location, isRemote, employmentType, isInternship, source, directFromEmployer,
+    postedAt, salary, matchScore, matchedSkills, missingSkills, scamFlags,
+)
+
 @Dao
 interface JobDao {
-    @Query("SELECT * FROM jobs ORDER BY postedAt DESC")
-    fun observeAll(): Flow<List<JobEntity>>
+    @Query(
+        "SELECT id, title, company, location, isRemote, employmentType, isInternship, source, directFromEmployer, " +
+            "postedAt, salary, matchScore, matchedSkills, missingSkills, scamFlags FROM jobs ORDER BY postedAt DESC"
+    )
+    fun observeList(): Flow<List<JobListItem>>
 
     @Query("SELECT * FROM jobs WHERE id = :id")
     fun observe(id: String): Flow<JobEntity?>
