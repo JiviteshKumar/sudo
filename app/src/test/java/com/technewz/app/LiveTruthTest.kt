@@ -211,6 +211,22 @@ class LiveTruthTest {
                     val both = ResearchSources.arxivRecent(long, 3650, 50).count { p -> p.abstract.contains(t.shortForm!!) }
                     if (both == 0) issues += "no paper uses “$long” together with ${t.shortForm}"
                 }
+                // d) Is it really new? Two independent sources must agree.
+                val year = java.time.LocalDate.now().year
+                val perYear = ResearchSources.openAlexYears(long)
+                val emergedNow = perYear?.let { com.technewz.app.ml.TermMiner.emergenceYear(it, year) }
+                val shownYear = t.firstSeen?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).year }
+                when {
+                    perYear == null -> issues += "OpenAlex unreachable — age not re-checked"
+                    emergedNow == null || emergedNow < year - 3 -> issues += "OpenAlex says it is NOT recent (took off: ${emergedNow ?: "never surged"})"
+                    shownYear != emergedNow -> issues += "app shows took-off year $shownYear but OpenAlex now gives $emergedNow"
+                }
+                val fourToFiveYearsAgo = ResearchSources.arxivCount(long, 1825, 1460)
+                val yearlyNow = again * 12
+                if (fourToFiveYearsAgo > minOf(30, maxOf(3, yearlyNow / 10))) issues += "arXiv: already $fourToFiveYearsAgo AI/ML papers 4–5 years ago (vs ~$yearlyNow/yr now) — not new"
+                val expectedStatus = if (emergedNow != null && emergedNow >= year - 1) "New" else "Rising"
+                if (emergedNow != null && t.status != expectedStatus) issues += "label ${t.status} but numbers say $expectedStatus"
+                line("  - Age check — OpenAlex took off: ${emergedNow ?: "?"}; arXiv AI/ML papers 4–5 years ago: $fourToFiveYearsAgo vs ~$yearlyNow/yr now")
             }
             line("- **${t.term}** [${t.status} ${t.kind}] — ${t.reason}")
             line("  - What: “${t.what}” — ${t.whatSource} → ${if (whatOk == true) "verbatim ✓" else if (whatOk == null) "source unreachable" else "✗"}")
@@ -218,7 +234,55 @@ class LiveTruthTest {
             if (issues.isEmpty()) line("  - All checks passed") else issues.forEach { line("  - ✗ $it"); failures += "${t.term}: $it" }
         }
         line()
-        line("Rejected by verification (sample): " + terms.filter { it.status == "Rejected" }.take(12).joinToString("; ") { "${it.term} — ${it.reason.take(90)}" })
+        line("Rejected by verification (sample): " + terms.filter { it.status == "Rejected" }.take(12).joinToString("; ") { "${it.term} — ${it.reason.take(110)}" })
+        line()
+
+        // ------------------------------------------------------------ 5. Trending now
+        line("## 5. Trending now: every item re-checked against the live API")
+        val trending = db.trending().allOnce()
+        var trendOk = 0
+        val gh = mapOf("Accept" to "application/vnd.github+json")
+        fun num(metric: String, sym: String): Double? = Regex(Regex.escape(sym) + "\\s*([0-9.]+)([kM]?)").find(metric)?.let {
+            it.groupValues[1].toDouble() * when (it.groupValues[2]) { "k" -> 1e3; "M" -> 1e6; else -> 1.0 }
+        }
+        val liveModels = runCatching {
+            com.technewz.app.data.AppJson.parseToJsonElement(Http.get("https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=40"))
+                .let { it as kotlinx.serialization.json.JsonArray }.map { (it as kotlinx.serialization.json.JsonObject)["id"].toString().trim('"') }
+        }.getOrDefault(emptyList())
+        for (t in trending) {
+            val problem: String? = runCatching {
+                when (t.kind) {
+                    "models" -> {
+                        val o = com.technewz.app.data.AppJson.parseToJsonElement(Http.get("https://huggingface.co/api/models/${t.id}")) as kotlinx.serialization.json.JsonObject
+                        val likes = o["likes"].toString().toDouble()
+                        val shown = num(t.metric, "♥") ?: 0.0
+                        when {
+                            t.id !in liveModels -> "no longer in Hugging Face's current top-40 trending (lists move hourly)"
+                            kotlin.math.abs(likes - shown) > maxOf(150.0, shown * 0.15) -> "likes shown ${t.metric} vs live ${likes.toInt()}"
+                            else -> null
+                        }
+                    }
+                    "papers" -> {
+                        val o = com.technewz.app.data.AppJson.parseToJsonElement(Http.get("https://huggingface.co/api/papers/${t.id}")) as kotlinx.serialization.json.JsonObject
+                        val title = o["title"].toString().trim('"')
+                        if (overlap(t.title, title) < 0.8) "title differs: “$title”" else null
+                    }
+                    else -> {
+                        val o = com.technewz.app.data.AppJson.parseToJsonElement(Http.get("https://api.github.com/repos/${t.id}", gh)) as kotlinx.serialization.json.JsonObject
+                        val created = com.technewz.app.util.Text.parseDate(o["created_at"].toString().trim('"')) ?: 0
+                        val stars = o["stargazers_count"].toString().toDouble()
+                        val shown = num(t.metric, "★") ?: 0.0
+                        when {
+                            System.currentTimeMillis() - created > 33L * 86_400_000 -> "created ${com.technewz.app.util.Text.timeAgo(created)}, not in the last 30 days"
+                            stars < shown * 0.85 -> "stars shown ${t.metric} vs live ${stars.toInt()}"
+                            else -> null
+                        }
+                    }
+                }
+            }.getOrElse { "could not verify (${it.javaClass.simpleName})" }
+            if (problem == null) trendOk++ else { line("  - [${t.kind}] ${t.title}: $problem"); if (!problem.startsWith("could not") && !problem.startsWith("no longer")) failures += "trending ${t.title}: $problem" }
+        }
+        line("- Trending items verified against the live source: $trendOk/${trending.size}")
         line()
 
         // ------------------------------------------------------------ verdict

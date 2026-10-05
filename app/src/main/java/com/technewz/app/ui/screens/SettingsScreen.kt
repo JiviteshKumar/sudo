@@ -243,6 +243,9 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
         SectionLabel("General")
         FieldGroup {
             ToggleRow("Background refresh", "Every 15 min when online (Android may delay this to save battery)", s.backgroundRefresh) { v -> vm.update { it.copy(backgroundRefresh = v) } }
+            if (!com.technewz.app.util.Battery.isUnrestricted(context)) {
+                TextButton(onClick = { com.technewz.app.util.Battery.requestUnrestricted(context) }) { Text("Allow running in the background (recommended)") }
+            }
             Text("Theme", style = MaterialTheme.typography.titleSmall)
             Row(Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).padding(4.dp)) {
                 ThemeMode.entries.forEach { m ->

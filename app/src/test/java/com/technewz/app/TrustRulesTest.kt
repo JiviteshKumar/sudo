@@ -124,6 +124,32 @@ class TrustRulesTest {
         assertTrue(use == null || doc.text.contains(use.sentence))
     }
 
+    // Real OpenAlex per-year counts, fetched 2026-10-05.
+    @Test fun emergenceYearSeparatesNewFromEstablished() {
+        val sdk = mapOf(2015 to 101, 2016 to 108, 2017 to 101, 2018 to 111, 2019 to 126, 2020 to 108, 2021 to 123, 2022 to 145, 2023 to 149, 2024 to 152, 2025 to 149, 2026 to 142)
+        val vla = mapOf(2022 to 1, 2023 to 9, 2024 to 63, 2025 to 590, 2026 to 2395)
+        val opsd = mapOf(2026 to 208)
+        val fde = mapOf(2026 to 8)
+        val flowMatching = mapOf(2015 to 20, 2016 to 22, 2017 to 15, 2018 to 23, 2019 to 21, 2020 to 17, 2021 to 13, 2022 to 26, 2023 to 69, 2024 to 315, 2025 to 1023, 2026 to 3038)
+        assertNull("SDK has been in steady use for decades", TermMiner.emergenceYear(sdk, 2026))
+        assertEquals(2024, TermMiner.emergenceYear(vla, 2026))
+        assertEquals(2026, TermMiner.emergenceYear(opsd, 2026))
+        assertNull("8 works is too little evidence", TermMiner.emergenceYear(fde, 2026))
+        // An older, unrelated meaning of the phrase doesn't hide the recent surge.
+        assertEquals(2024, TermMiner.emergenceYear(flowMatching, 2026))
+        // Booming but long-established ideas are not "new" (these slipped through before this rule).
+        val dp = mapOf(2016 to 318, 2017 to 489, 2018 to 629, 2019 to 846, 2020 to 1131, 2021 to 1421, 2022 to 1707, 2023 to 2101, 2024 to 2869, 2025 to 4447, 2026 to 5201)
+        val worldModels = mapOf(2016 to 231, 2017 to 267, 2018 to 288, 2019 to 304, 2020 to 351, 2021 to 354, 2022 to 365, 2023 to 530, 2024 to 803, 2025 to 1742, 2026 to 5655)
+        val conformal = mapOf(2016 to 23, 2017 to 46, 2018 to 48, 2019 to 61, 2020 to 86, 2021 to 106, 2022 to 162, 2023 to 286, 2024 to 598, 2025 to 1040, 2026 to 2288)
+        assertNull("differential privacy (2006)", TermMiner.emergenceYear(dp, 2026))
+        assertNull("world models", TermMiner.emergenceYear(worldModels, 2026))
+        assertNull("conformal prediction", TermMiner.emergenceYear(conformal, 2026))
+        val opd = mapOf(2016 to 1, 2017 to 3, 2018 to 6, 2019 to 9, 2020 to 15, 2021 to 13, 2022 to 21, 2023 to 27, 2024 to 41, 2025 to 95, 2026 to 632)
+        val rlvr = mapOf(2024 to 4, 2025 to 227, 2026 to 950)
+        assertEquals(2024, TermMiner.emergenceYear(opd, 2026))
+        assertEquals(2025, TermMiner.emergenceYear(rlvr, 2026))
+    }
+
     @Test fun groundingCheckRejectsInventedFacts() {
         val src = listOf("Cache-augmented generation preloads all relevant documents into the model's context, so no retrieval step is needed at answer time.")
         assertTrue(TermMiner.grounded("Cache-augmented generation preloads the relevant documents into the model's context, so no retrieval step is needed.", src))

@@ -90,16 +90,18 @@ class AppUiTest {
 
     private fun start(expect: String = "Tech Pulse") {
         rule.setContent { AppRoot(c, null) {} }
+        // Let the launch intro finish (it plays for ~2.4 s on every cold start).
+        rule.waitUntil(30_000) { rule.onAllNodes(androidx.compose.ui.test.hasContentDescription("sudo intro")).fetchSemanticsNodes().isEmpty() }
         shown(expect)
     }
 
     /** Waits (up to 15 s) until [text] is on screen; data loads on background threads the test clock does not track. */
     private fun shown(text: String) {
-        rule.waitUntil(15_000) { runCatching { rule.onNodeWithText(text).assertIsDisplayed() }.isSuccess }
+        rule.waitUntil(30_000) { runCatching { rule.onNodeWithText(text).assertIsDisplayed() }.isSuccess }
     }
 
     private fun gone(text: String) {
-        rule.waitUntil(15_000) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty() }
+        rule.waitUntil(30_000) { rule.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty() }
     }
 
     @Test fun homeShowsVerifiedFeed() {

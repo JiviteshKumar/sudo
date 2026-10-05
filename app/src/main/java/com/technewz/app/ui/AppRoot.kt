@@ -46,6 +46,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -106,7 +107,9 @@ fun AppRoot(c: AppContainer, pendingRoute: String?, onRouteConsumed: () -> Unit)
     TechNewzTheme(s?.theme ?: com.technewz.app.data.ThemeMode.SYSTEM) {
         // Keep status/navigation bar icons readable when the in-app theme differs from the system theme.
         val view = androidx.compose.ui.platform.LocalView.current
-        val lightBars = !com.technewz.app.ui.theme.LocalExtra.current.isDark
+        var showIntro by rememberSaveable { mutableStateOf(true) }
+        // The intro is always dark, so the system bar icons are light while it shows.
+        val lightBars = !com.technewz.app.ui.theme.LocalExtra.current.isDark && !showIntro
         if (!view.isInEditMode) androidx.compose.runtime.SideEffect {
             val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
             androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
@@ -115,7 +118,11 @@ fun AppRoot(c: AppContainer, pendingRoute: String?, onRouteConsumed: () -> Unit)
             }
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            // The app loads underneath while the intro plays.
             if (s != null) AppNav(c, s, pendingRoute, onRouteConsumed)
+            AnimatedVisibility(showIntro, enter = fadeIn(tween(0)), exit = fadeOut(tween(350))) {
+                IntroScreen { showIntro = false }
+            }
         }
     }
 }

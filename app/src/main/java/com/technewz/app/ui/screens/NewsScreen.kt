@@ -93,6 +93,7 @@ import com.technewz.app.util.Text
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -119,7 +120,8 @@ class NewsViewModel(private val c: AppContainer, val section: String) : ViewMode
 
     private val clusters = c.db.articles().observeSection(section).map { clusterArticles(it) }
 
-    val state: StateFlow<NewsUi> = combine(clusters, topic, c.settings.settings, c.settings.profile, c.refreshingNews) { cl, t, s, p, r ->
+    val state: StateFlow<NewsUi> = combine(clusters, topic, c.settings.settings, c.settings.profile, combine(c.refreshingNews, c.syncing) { a, b -> a to b }) { cl, t, s, p, rs ->
+        val (r, syncing) = rs
         val counts = cl.groupingBy { it.primary.topic }.eachCount()
         NewsUi(
             loaded = true,
@@ -130,9 +132,12 @@ class NewsViewModel(private val c: AppContainer, val section: String) : ViewMode
             hasAi = s.hasAi,
             profile = p,
             refreshing = r,
+            syncing = syncing,
             note = s.lastError,
+            batteryPromptDismissed = s.batteryPromptDismissed,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NewsUi())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default) // clustering hundreds of stories must not block scrolling
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NewsUi())
 
     val trending: StateFlow<List<TrendingEntity>> =
         c.db.trending().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -140,7 +145,8 @@ class NewsViewModel(private val c: AppContainer, val section: String) : ViewMode
     init {
         viewModelScope.launch {
             val s = c.settings.current()
-            if (System.currentTimeMillis() - s.lastNewsRefresh > 10 * 60_000) c.refreshNews()
+            // The background worker keeps things fresh; only catch up (silently) if it hasn't run lately.
+            if (System.currentTimeMillis() - s.lastNewsRefresh > 20 * 60_000) c.refreshNews(userInitiated = false)
             if (section == Section.AI) runCatching { c.news.refreshTrendingIfStale() }
         }
     }
@@ -149,6 +155,8 @@ class NewsViewModel(private val c: AppContainer, val section: String) : ViewMode
         c.refreshNews()?.let(onMessage)
         if (section == Section.AI) runCatching { c.news.refreshTrendingIfStale(force = true) }
     }
+
+    fun dismissBatteryPrompt() = viewModelScope.launch { c.settings.update { it.copy(batteryPromptDismissed = true) } }
 
     fun toggleBookmark(a: ArticleEntity) = viewModelScope.launch { c.news.setBookmarked(a.id, !a.bookmarked) }
     fun markRead(a: ArticleEntity) = viewModelScope.launch { c.news.markRead(a.id) }
@@ -163,7 +171,9 @@ data class NewsUi(
     val hasAi: Boolean = false,
     val profile: Profile = Profile(),
     val refreshing: Boolean = false,
+    val syncing: Boolean = false,
     val note: String = "",
+    val batteryPromptDismissed: Boolean = true,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -209,10 +219,13 @@ fun NewsScreen(
                     profile = ui.profile,
                     lastRefresh = ui.lastRefresh,
                     total = ui.total,
-                    refreshing = ui.refreshing,
+                    refreshing = ui.refreshing || ui.syncing,
                     onOpenProfile = onOpenProfile,
                     onOpenSettings = onOpenSettings,
                 )
+            }
+            if (!isAi && ui.loaded && !ui.batteryPromptDismissed) {
+                item(key = "battery") { BatteryCard(onDismiss = vm::dismissBatteryPrompt) }
             }
             item(key = "chips") {
                 ChipRow(
@@ -233,7 +246,7 @@ fun NewsScreen(
             }
 
             when {
-                !ui.loaded || (ui.total == 0 && ui.refreshing) -> items(4, key = { "sk$it" }) { SkeletonCard() }
+                !ui.loaded || (ui.total == 0 && (ui.refreshing || ui.syncing)) -> items(4, key = { "sk$it" }) { SkeletonCard() }
                 ui.clusters.isEmpty() -> item(key = "empty") {
                     EmptyState(
                         Icons.Rounded.Newspaper,
@@ -316,7 +329,7 @@ fun NewsHeader(
             LiveDot()
             Spacer(Modifier.width(4.dp))
             val status = when {
-                refreshing -> "Refreshing…"
+                refreshing -> "Updating in background…"
                 lastRefresh == 0L -> "Connecting to sources"
                 else -> "Updated ${Text.timeAgo(lastRefresh)}"
             }
@@ -339,6 +352,36 @@ fun ProfileButton(profile: Profile, accent: Accent, onClick: () -> Unit) {
         val initials = profile.fullName.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
         if (initials.isNotBlank()) Text(initials, color = Color.White, style = MaterialTheme.typography.labelLarge)
         else Icon(Icons.Rounded.Person, "Profile", tint = Color.White)
+    }
+}
+
+/** One-time card: background refresh only runs reliably when Android isn't battery-optimising the app. */
+@Composable
+private fun BatteryCard(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var unrestricted by remember { mutableStateOf(com.technewz.app.util.Battery.isUnrestricted(context)) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) unrestricted = com.technewz.app.util.Battery.isUnrestricted(context)
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs) }
+    }
+    if (unrestricted) return
+    AppCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Keep sudo fresh in the background", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Your phone's battery saver can pause the 15-minute refresh. Allow sudo to run in the background so news is ready the moment you open it.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.End) {
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Not now") }
+                androidx.compose.material3.TextButton(onClick = { com.technewz.app.util.Battery.requestUnrestricted(context) }) { Text("Allow") }
+            }
+        }
     }
 }
 
@@ -589,7 +632,17 @@ private fun TrendingBlock(items: List<TrendingEntity>, accent: Accent, onOpen: (
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
+        // Say exactly what each list is ranked by and where it comes from.
+        Text(
+            when (kind) {
+                "models" -> "Hugging Face · ranked by Hugging Face's trending score"
+                "papers" -> "Hugging Face Daily Papers · ranked by upvotes"
+                else -> "GitHub · repos created in the last 30 days, ranked by stars"
+            },
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+        )
+        Spacer(Modifier.height(6.dp))
         Crossfade(kind, label = "trend") { k ->
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(items.filter { it.kind == k }, key = { it.kind + it.id }) { t ->

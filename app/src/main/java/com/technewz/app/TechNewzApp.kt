@@ -31,11 +31,18 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
     private val _refreshingJobs = MutableStateFlow(false)
     val refreshingNews: StateFlow<Boolean> = _refreshingNews
     val refreshingJobs: StateFlow<Boolean> = _refreshingJobs
+    private val _syncing = MutableStateFlow(false)
+    /** True while a silent catch-up refresh runs (no spinner; just a small status line). */
+    val syncing: StateFlow<Boolean> = _syncing
+    private val jobsMutex = Mutex()
 
-    /** User-initiated refresh. Returns a short status message for the UI (or null if nothing to say). */
-    suspend fun refreshNews(): String? {
-        if (!refreshMutex.tryLock()) return null
-        _refreshingNews.value = true
+    /**
+     * Refreshes news. [userInitiated] shows the pull-to-refresh spinner; otherwise it runs silently.
+     * Returns a short status message for the UI (or null if nothing to say).
+     */
+    suspend fun refreshNews(userInitiated: Boolean = true): String? {
+        if (!refreshMutex.tryLock()) return if (userInitiated) "Already updating in the background" else null
+        if (userInitiated) _refreshingNews.value = true else _syncing.value = true
         return try {
             val r = news.refresh()
             runCatching { HeadlinesWidget.updateAll(context) }
@@ -49,6 +56,7 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
             "Couldn't refresh: ${e.message ?: "network error"}"
         } finally {
             _refreshingNews.value = false
+            _syncing.value = false
             refreshMutex.unlock()
         }
     }
@@ -73,9 +81,9 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
         }
     }
 
-    suspend fun refreshJobs(force: Boolean): String? {
-        if (_refreshingJobs.value) return null
-        _refreshingJobs.value = true
+    suspend fun refreshJobs(force: Boolean, userInitiated: Boolean = true): String? {
+        if (!jobsMutex.tryLock()) return null
+        if (userInitiated) _refreshingJobs.value = true
         return try {
             val r = jobs.refresh(force) ?: return null
             if (r.total == 0 && r.failedSources.isNotEmpty()) "Couldn't reach job sources — check your connection."
@@ -84,6 +92,7 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
             "Couldn't refresh jobs: ${e.message ?: "network error"}"
         } finally {
             _refreshingJobs.value = false
+            jobsMutex.unlock()
         }
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.technewz.app.data.ArticleEntity
 import com.technewz.app.data.JobEntity
+import com.technewz.app.data.toListItem
 import com.technewz.app.data.Profile
 import com.technewz.app.data.Section
 import com.technewz.app.data.SummaryKind
@@ -112,7 +113,7 @@ class ScreenshotTest {
             NewsHeader("Jobs & Internships", Accents.jobs, profile, now - 20 * 60_000, 312, false, {}, {})
             ChipRow(listOf("Internships", "Full-time", "Remote", "On-site", "Near me"), setOf("Remote"), Accents.jobs, {})
             Spacer(Modifier.height(2.dp))
-            jobs.forEach { JobCard(it, tracked = it.id == "j2", hasProfile = true, onClick = {}) }
+            jobs.forEach { JobCard(it.toListItem(), tracked = it.id == "j2", hasProfile = true, onClick = {}) }
         }
     }
 
@@ -130,6 +131,10 @@ class ScreenshotTest {
         newsMentions = 2, jobMentions = 3, jobCompanies = "Scale AI|Databricks", repo = null, repoStars = null, evidence = "[]",
         score = 5.0, checkedAt = now, discoveredAt = now,
     )
+
+    @Test fun introMidway() = captureRoboImage("build/screens/intro.png") {
+        TechNewzTheme(ThemeMode.DARK) { com.technewz.app.ui.IntroScreen(frozenAtMs = 1900f) {} }
+    }
 
     @Test fun brand() = captureRoboImage("build/screens/brand.png") {
         val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()

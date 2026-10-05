@@ -5,9 +5,10 @@
         <item name="android:windowBackground">@color/bg</item>
     </style>
     <style name="Theme.TechNewz.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/bg</item>
+        <item name="windowSplashScreenBackground">@color/intro_bg</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="postSplashScreenTheme">@style/Theme.TechNewz</item>
     </style>
     <color name="bg">#FFF6F7FB</color>
+    <color name="intro_bg">#FF07080D</color>
 </resources>

@@ -54,6 +54,9 @@ import androidx.lifecycle.viewModelScope
 import com.technewz.app.AppContainer
 import com.technewz.app.data.AppSettings
 import com.technewz.app.data.JobEntity
+import com.technewz.app.data.JobListItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import com.technewz.app.data.Profile
 import com.technewz.app.ui.components.AppCard
 import com.technewz.app.ui.components.ChipRow
@@ -87,7 +90,7 @@ object JobFilter {
 
 data class JobsUi(
     val loaded: Boolean = false,
-    val jobs: List<JobEntity> = emptyList(),
+    val jobs: List<JobListItem> = emptyList(),
     val total: Int = 0,
     val filters: Set<String> = emptySet(),
     val query: String = "",
@@ -107,7 +110,7 @@ class JobsViewModel(private val c: AppContainer) : ViewModel() {
     private val queryState = combine(filters, query, sortByMatch) { f, q, m -> Q(f, q, m) }
 
     val state: StateFlow<JobsUi> = combine(
-        c.db.jobs().observeAll(), queryState, c.settings.settings, c.settings.profile,
+        c.db.jobs().observeList(), queryState, c.settings.settings, c.settings.profile,
         combine(c.refreshingJobs, c.db.applications().observeAll()) { r, apps -> r to apps.map { it.jobId }.toSet() },
     ) { jobs, q, s, p, rt ->
         val near = nearTerms(s, p)
@@ -127,13 +130,14 @@ class JobsViewModel(private val c: AppContainer) : ViewModel() {
                     j.location.lowercase().contains(text) || j.matchedSkills.lowercase().contains(text)
             }
             .toList()
-        val sorted = if (q.m) filtered.sortedWith(compareByDescending<JobEntity> { it.matchScore ?: -1 }.thenByDescending { it.postedAt })
+        val sorted = if (q.m) filtered.sortedWith(compareByDescending<JobListItem> { it.matchScore ?: -1 }.thenByDescending { it.postedAt })
         else filtered.sortedByDescending { it.postedAt }
         JobsUi(true, sorted.take(300), jobs.size, q.f, q.q, q.m, rt.first, s, p, rt.second)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), JobsUi())
+    }.flowOn(Dispatchers.Default) // filtering/sorting ~2,000 jobs must not run on the UI thread
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), JobsUi())
 
     init {
-        viewModelScope.launch { c.refreshJobs(force = false) }
+        viewModelScope.launch { c.refreshJobs(force = false, userInitiated = false) }
     }
 
     fun toggle(f: String) {
@@ -287,14 +291,17 @@ fun JobsScreen(
 }
 
 /** Employer boards keep evergreen roles open for months; say "live" rather than implying the role is stale. */
-fun postedLabel(job: JobEntity): String {
-    val old = System.currentTimeMillis() - job.postedAt > 60L * 24 * 3600 * 1000
-    return if (job.directFromEmployer && old) "live on careers page" else "posted ${Text.timeAgo(job.postedAt)}"
+fun postedLabel(job: JobEntity): String = postedLabel(job.directFromEmployer, job.postedAt)
+fun postedLabel(job: JobListItem): String = postedLabel(job.directFromEmployer, job.postedAt)
+
+private fun postedLabel(direct: Boolean, postedAt: Long): String {
+    val old = System.currentTimeMillis() - postedAt > 60L * 24 * 3600 * 1000
+    return if (direct && old) "live on careers page" else "posted ${Text.timeAgo(postedAt)}"
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun JobCard(job: JobEntity, tracked: Boolean, hasProfile: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun JobCard(job: JobListItem, tracked: Boolean, hasProfile: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val extra = LocalExtra.current
     AppCard(modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = onClick) {
         Column(Modifier.padding(16.dp)) {

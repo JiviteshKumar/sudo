@@ -10,7 +10,9 @@ import com.technewz.app.net.RssParser
 import com.technewz.app.net.TrendingSources
 import com.technewz.app.util.Text
 import com.technewz.app.work.Notifications
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
@@ -35,7 +37,8 @@ class NewsRepository(
 
     data class RefreshResult(val newArticles: Int, val failedFeeds: List<String>, val aiNote: String?)
 
-    suspend fun refresh(): RefreshResult = coroutineScope {
+    // All refresh work runs on a background CPU pool so scrolling never stalls (fixes "isn't responding").
+    suspend fun refresh(): RefreshResult = withContext(Dispatchers.Default) {
         val s = settings.current()
         val now = System.currentTimeMillis()
 
@@ -160,9 +163,9 @@ class NewsRepository(
     }
 
     // ---------------- Trending (AI tab) ----------------
-    suspend fun refreshTrendingIfStale(force: Boolean = false) = coroutineScope {
+    suspend fun refreshTrendingIfStale(force: Boolean = false) = withContext(Dispatchers.Default) {
         val last = db.trending().lastFetched() ?: 0
-        if (!force && System.currentTimeMillis() - last < TimeUnit.MINUTES.toMillis(60)) return@coroutineScope
+        if (!force && System.currentTimeMillis() - last < TimeUnit.MINUTES.toMillis(60)) return@withContext
         val now = System.currentTimeMillis()
         val jobs = listOf(
             "models" to async { runCatching { TrendingSources.hfModels() } },

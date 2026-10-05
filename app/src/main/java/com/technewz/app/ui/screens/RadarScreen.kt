@@ -107,7 +107,7 @@ private fun growthLine(t: TermEntity): String? {
     val prior = t.papersPrior / 150.0
     val now = t.papers30 / 30.0
     val x = if (prior > 0) now / prior else null
-    return "${t.papers30} papers in 30 days" + (x?.takeIf { it >= 1.2 }?.let { " · ${"%.1f".format(it)}× faster" } ?: "")
+    return "${t.papers30} AI/ML papers in 30 days" + (x?.takeIf { it >= 1.2 }?.let { " · ${"%.1f".format(it)}× faster" } ?: "")
 }
 
 /** Preview strip shown at the top of the AI & Data tab. */
@@ -208,7 +208,7 @@ fun RadarScreen(vm: RadarViewModel, onBack: () -> Unit, onMessage: (String) -> U
                     Column(Modifier.padding(horizontal = 12.dp)) {
                         GradientText("Skills Radar", Accents.ai, MaterialTheme.typography.displaySmall)
                         Text(
-                            "New and rising AI, ML & data-science terms and tools. Found in today's research, news, GitHub and job posts — then verified against arXiv, Wikipedia and GitHub. Explanations are quoted from the sources.",
+                            "New and rising AI, ML & data-science terms and tools. Found in today's research, news, GitHub and job posts. Each must have taken off within the last 3 years (OpenAlex publication history), be active in AI/ML research now (arXiv) and be explained by a quoted source.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         progress?.let {
@@ -254,7 +254,8 @@ fun TermCard(t: TermEntity, evidence: List<Evidence>, modifier: Modifier = Modif
                 Spacer(Modifier.width(8.dp))
                 t.firstSeen?.let {
                     Text(
-                        (if (t.kind == "Tool") "first released " else "earliest arXiv use of the phrase: ") + Text.timeAgo(it),
+                        if (t.kind == "Tool") "first released " + Text.timeAgo(it)
+                        else "took off in " + java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).year,
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
