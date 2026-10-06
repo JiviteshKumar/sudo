@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class AppContainer(private val context: Context, val db: AppDatabase = AppDatabase.create(context)) {
     val settings = SettingsRepository(context)
@@ -44,7 +45,7 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
         if (!refreshMutex.tryLock()) return if (userInitiated) "Already updating in the background" else null
         if (userInitiated) _refreshingNews.value = true else _syncing.value = true
         return try {
-            val r = news.refresh()
+            val r = com.technewz.app.data.HeavyWork.lock.withLock { news.refresh() }
             runCatching { HeadlinesWidget.updateAll(context) }
             when {
                 r.aiNote != null -> r.aiNote
@@ -64,13 +65,18 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
     private val _radarProgress = MutableStateFlow<String?>(null)
     /** Non-null while the Skills Radar is refreshing; holds a human-readable progress line. */
     val radarProgress: StateFlow<String?> = _radarProgress
+    private val _radarNote = MutableStateFlow<String?>(null)
+    /** Last scan's caveat (e.g. a source's daily limit was reached), shown on the radar until the next scan. */
+    val radarNote: StateFlow<String?> = _radarNote
 
     suspend fun refreshRadar(force: Boolean): String? {
         if (_radarProgress.value != null) return null
         _radarProgress.value = "Starting…"
         return try {
             val r = radar.refresh(force) { _radarProgress.value = it } ?: return null
+            _radarNote.value = if (r.paused) "Verification paused — research sources were busy or at their daily limit; it continues on the next scan" else null
             when {
+                r.paused -> "Radar paused: research sources were busy or at their free daily limit. It retries automatically; a free OpenAlex key in Settings helps."
                 r.accepted.isNotEmpty() -> "New on the radar: " + r.accepted.take(3).joinToString(", ")
                 else -> "Checked ${r.checked} candidate terms — nothing new passed verification"
             }
@@ -85,7 +91,7 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
         if (!jobsMutex.tryLock()) return null
         if (userInitiated) _refreshingJobs.value = true
         return try {
-            val r = jobs.refresh(force) ?: return null
+            val r = com.technewz.app.data.HeavyWork.lock.withLock { jobs.refresh(force) } ?: return null
             if (r.total == 0 && r.failedSources.isNotEmpty()) "Couldn't reach job sources — check your connection."
             else if (r.newCount > 0) "${r.newCount} new opportunities" else "Jobs are up to date"
         } catch (e: Exception) {
@@ -97,12 +103,20 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
     }
 }
 
-class TechNewzApp : Application() {
+class TechNewzApp : Application(), coil.ImageLoaderFactory {
     lateinit var container: AppContainer
         private set
 
+    /** Images get a modest memory budget (default is up to 25% of the heap) plus a disk cache. */
+    override fun newImageLoader(): coil.ImageLoader = coil.ImageLoader.Builder(this)
+        .memoryCache { coil.memory.MemoryCache.Builder(this).maxSizePercent(0.12).build() }
+        .diskCache { coil.disk.DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(64L * 1024 * 1024).build() }
+        .crossfade(true)
+        .build()
+
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         container = AppContainer(this)
         Notifications.createChannels(this)
         container.appScope.launch {
@@ -112,3 +126,30 @@ class TechNewzApp : Application() {
 }
 
 val Context.container: AppContainer get() = (applicationContext as TechNewzApp).container
+
+/** Saves the last crash so it can be copied from Settings and diagnosed, then lets Android handle it. */
+object CrashLog {
+    private fun file(c: Context) = java.io.File(c.filesDir, "last_crash.txt")
+
+    fun install(c: Context) {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+            runCatching {
+                val rt = Runtime.getRuntime()
+                file(c).writeText(
+                    listOf(
+                        "sudo crash · ${java.util.Date()}",
+                        "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE}",
+                        "heap: ${(rt.totalMemory() - rt.freeMemory()) / 1_048_576} MB used of ${rt.maxMemory() / 1_048_576} MB · thread: ${thread.name}",
+                        "",
+                        e.stackTraceToString().take(20_000),
+                    ).joinToString(System.lineSeparator())
+                )
+            }
+            previous?.uncaughtException(thread, e)
+        }
+    }
+
+    fun read(c: Context): String? = file(c).takeIf { it.exists() }?.readText()
+    fun clear(c: Context) { file(c).delete() }
+}

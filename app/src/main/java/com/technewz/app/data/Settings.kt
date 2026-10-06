@@ -44,6 +44,7 @@ data class AppSettings(
     val geminiModel: String = DEFAULT_MODEL,
     val adzunaAppId: String = "",
     val adzunaAppKey: String = "",
+    val openAlexKey: String = "",
     val city: String = "",
     val countryCode: String = Locale.getDefault().country.lowercase(),
     val keywords: List<String> = emptyList(),
@@ -80,6 +81,7 @@ class SettingsRepository(private val context: Context) {
         val geminiModel = stringPreferencesKey("gemini_model")
         val adzunaId = stringPreferencesKey("adzuna_id")
         val adzunaKey = stringPreferencesKey("adzuna_key")
+        val openAlexKey = stringPreferencesKey("openalex_key")
         val city = stringPreferencesKey("city")
         val country = stringPreferencesKey("country")
         val keywords = stringPreferencesKey("keywords")
@@ -116,6 +118,7 @@ class SettingsRepository(private val context: Context) {
             geminiModel = this[K.geminiModel]?.takeIf { it.isNotBlank() } ?: d.geminiModel,
             adzunaAppId = this[K.adzunaId] ?: "",
             adzunaAppKey = this[K.adzunaKey] ?: "",
+            openAlexKey = this[K.openAlexKey] ?: "",
             city = this[K.city] ?: "",
             countryCode = this[K.country] ?: d.countryCode,
             keywords = (this[K.keywords] ?: "").split("|").map { it.trim() }.filter { it.isNotEmpty() },
@@ -143,6 +146,7 @@ class SettingsRepository(private val context: Context) {
             prefs[K.geminiModel] = s.geminiModel.trim()
             prefs[K.adzunaId] = s.adzunaAppId.trim()
             prefs[K.adzunaKey] = s.adzunaAppKey.trim()
+            prefs[K.openAlexKey] = s.openAlexKey.trim()
             prefs[K.city] = s.city.trim()
             prefs[K.country] = s.countryCode.trim().lowercase()
             prefs[K.keywords] = s.keywords.joinToString("|")

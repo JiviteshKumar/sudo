@@ -12,6 +12,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.technewz.app.TechNewzApp
+import com.technewz.app.data.HeavyWork
+import kotlinx.coroutines.sync.withLock
 import com.technewz.app.widget.HeadlinesWidget
 import java.util.concurrent.TimeUnit
 
@@ -19,8 +21,9 @@ import java.util.concurrent.TimeUnit
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val c = (applicationContext as TechNewzApp).container
-        val news = runCatching { c.news.refresh() }
-        runCatching { c.jobs.refresh(force = false) }
+        // One heavy job at a time, so memory peaks never stack (the radar takes the lock itself).
+        val news = runCatching { HeavyWork.lock.withLock { c.news.refresh() } }
+        runCatching { HeavyWork.lock.withLock { c.jobs.refresh(force = false) } }
         runCatching { c.radar.refresh(force = false) } // self-throttles to twice a day
         runCatching { HeadlinesWidget.updateAll(applicationContext) }
         return if (news.isSuccess || runAttemptCount >= 2) Result.success() else Result.retry()

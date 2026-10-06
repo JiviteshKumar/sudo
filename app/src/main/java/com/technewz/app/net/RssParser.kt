@@ -15,6 +15,8 @@ data class RawItem(
 
 /** Minimal, forgiving RSS 2.0 / RDF / Atom parser. */
 object RssParser {
+    private val tags = Regex("<[^>]*>")
+
     fun parse(xml: String): List<RawItem> {
         val parser = XmlPullParserFactory.newInstance().newPullParser()
         runCatching { parser.setFeature("http://xmlpull.org/v1/doc/features.html#relaxed", true) }
@@ -82,9 +84,10 @@ object RssParser {
                         val html = desc.ifBlank { content }
                         if (title.isNotBlank() && link.startsWith("http")) {
                             items += RawItem(
-                                title = Text.htmlToText(title),
+                                title = if (title.contains('<') || title.contains('&')) Text.htmlToText(title) else title.replace(Regex("\\s+"), " ").trim(),
                                 link = link.trim(),
-                                descriptionHtml = if (Text.htmlToText(html).length < 120 && content.isNotBlank()) content else html,
+                                // Cheap length check (no HTML parser per item — feeds can carry thousands of items).
+                                descriptionHtml = if (html.replace(tags, "").trim().length < 120 && content.isNotBlank()) content else html,
                                 published = Text.parseDate(date),
                                 imageUrl = image ?: Text.firstImage(content) ?: Text.firstImage(desc),
                             )

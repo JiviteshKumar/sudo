@@ -32,16 +32,25 @@ object ResearchSources {
     private val stamp = DateTimeFormatter.ofPattern("yyyyMMddHHmm").withZone(ZoneOffset.UTC)
 
     private suspend fun arxiv(query: String, max: Int, sortAsc: Boolean = false): String = arxivGate.withLock {
-        val wait = 3100 - (System.currentTimeMillis() - lastArxiv)
-        if (wait > 0) delay(wait)
-        try {
-            Http.get(
-                "https://export.arxiv.org/api/query?search_query=${URLEncoder.encode(query, "UTF-8")}" +
-                    "&sortBy=submittedDate&sortOrder=${if (sortAsc) "ascending" else "descending"}&max_results=$max"
-            )
-        } finally {
-            lastArxiv = System.currentTimeMillis()
+        val url = "https://export.arxiv.org/api/query?search_query=${URLEncoder.encode(query, "UTF-8")}" +
+            "&sortBy=submittedDate&sortOrder=${if (sortAsc) "ascending" else "descending"}&max_results=$max"
+        // arXiv's API is often briefly overloaded (503/429/timeouts): retry with backoff instead of
+        // silently continuing with missing data.
+        var lastError: Exception? = null
+        for (attempt in 0 until 3) {
+            val wait = 3100L * (1 shl attempt) - (System.currentTimeMillis() - lastArxiv)
+            if (wait > 0) delay(wait)
+            try {
+                val body = Http.get(url)
+                if (!body.contains("<feed")) throw java.io.IOException("arXiv returned no feed")
+                return@withLock body
+            } catch (e: Exception) {
+                lastError = e
+            } finally {
+                lastArxiv = System.currentTimeMillis()
+            }
         }
+        throw lastError ?: java.io.IOException("arXiv unavailable")
     }
 
     private fun total(xml: String): Int =
@@ -77,25 +86,128 @@ object ResearchSources {
         papers(arxiv("${phrase(p)} AND $aiFilter AND ${window(days, 0)}", max))
 
     // ------------------------------------------------------------- OpenAlex (all scholarly works, independent of arXiv)
+    /** Optional free personal key (Settings). Without it, requests share a small daily budget per network IP. */
+    @Volatile var openAlexKey: String = ""
+
+    /** Thrown when OpenAlex's daily budget is used up; callers pause rather than guess. */
+    class OpenAlexBudgetExhausted : java.io.IOException("OpenAlex daily free limit reached")
+
+    private suspend fun openAlexGet(url: String, maxBytes: Long = 4_000_000): String {
+        val withKey = if (openAlexKey.isBlank()) url else url + "&api_key=" + URLEncoder.encode(openAlexKey, "UTF-8")
+        return try {
+            Http.get(withKey, maxBytes = maxBytes)
+        } catch (e: HttpException) {
+            if (e.code == 429) throw OpenAlexBudgetExhausted() else throw e
+        }
+    }
     /** Number of scholarly works per publication year whose title or abstract contains the exact phrase. */
-    suspend fun openAlexYears(p: String): Map<Int, Int>? = runCatching {
+    suspend fun openAlexYears(p: String): Map<Int, Int>? = try {
+        openAlexYearsOrThrow(p)
+    } catch (e: OpenAlexBudgetExhausted) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    private suspend fun openAlexYearsOrThrow(p: String): Map<Int, Int> = run {
         val q = URLEncoder.encode("\"" + p.replace("\"", "") + "\"", "UTF-8")
-        val json = Http.get("https://api.openalex.org/works?filter=title_and_abstract.search:$q&group_by=publication_year&per-page=200")
+        val json = openAlexGet("https://api.openalex.org/works?filter=title_and_abstract.search:$q&group_by=publication_year&per-page=200")
         AppJson.parseToJsonElement(json).jsonObject["group_by"]!!.jsonArray.associate {
             val o = it.jsonObject
             o.s("key").toInt() to o.s("count").toInt()
         }
-    }.getOrNull()
+    }
+
+    // OpenAlex view of arXiv computer-science papers: the app's per-term activity checks use this (fast and
+    // generous limits); the truth audit cross-checks against arXiv's own API independently.
+    private fun oaArxivFilter(p: String, fromDaysAgo: Int, toDaysAgo: Int): String {
+        val today = java.time.LocalDate.now()
+        val phrase = URLEncoder.encode("\"" + p.replace("\"", "") + "\"", "UTF-8")
+        return "title_and_abstract.search:$phrase,primary_location.source.id:S4306400194,primary_topic.field.id:fields/17," +
+            "from_publication_date:${today.minusDays(fromDaysAgo.toLong())},to_publication_date:${today.minusDays(toDaysAgo.toLong())}"
+    }
+
+    /** arXiv computer-science papers mentioning [p] published between [fromDaysAgo] and [toDaysAgo] (via OpenAlex). */
+    suspend fun oaArxivCount(p: String, fromDaysAgo: Int, toDaysAgo: Int): Int {
+        val json = openAlexGet("https://api.openalex.org/works?filter=${oaArxivFilter(p, fromDaysAgo, toDaysAgo)}&per-page=1&select=id")
+        return AppJson.parseToJsonElement(json).jsonObject["meta"]!!.jsonObject.s("count").toInt()
+    }
+
+    /** Most recent arXiv papers mentioning [p], with abstracts (via OpenAlex). */
+    suspend fun oaArxivRecent(p: String, days: Int, max: Int): List<Paper> {
+        val json = openAlexGet(
+            "https://api.openalex.org/works?filter=${oaArxivFilter(p, days, 0)}&sort=publication_date:desc&per-page=$max" +
+                "&select=title,publication_date,abstract_inverted_index,primary_location", maxBytes = 8_000_000,
+        )
+        return AppJson.parseToJsonElement(json).jsonObject["results"]!!.jsonArray.mapNotNull { r ->
+            val o = r.jsonObject
+            val inv = o["abstract_inverted_index"] as? JsonObject ?: return@mapNotNull null
+            val words = ArrayList<Pair<Int, String>>()
+            inv.forEach { (w, ps) -> ps.jsonArray.forEach { words += it.jsonPrimitive.content.toInt() to w } }
+            val landing = (o["primary_location"] as? JsonObject)?.s("landing_page_url").orEmpty()
+            Paper(o.s("title"), words.sortedBy { it.first }.joinToString(" ") { it.second }, landing.ifBlank { "https://openalex.org" }, Text.parseDate(o.s("publication_date")) ?: 0)
+        }
+    }
+
+    /** Papers mentioning [p] in a date window: arXiv's own API first (no daily cap), OpenAlex if arXiv fails. */
+    suspend fun activityCount(p: String, fromDaysAgo: Int, toDaysAgo: Int): Int =
+        runCatching { arxivCount(p, fromDaysAgo, toDaysAgo) }.getOrElse { oaArxivCount(p, fromDaysAgo, toDaysAgo) }
+
+    /** Recent papers with abstracts (explanation sources): arXiv first, OpenAlex if arXiv fails. */
+    suspend fun recentPapersFor(p: String, days: Int, max: Int): List<Paper> =
+        runCatching { arxivRecent(p, days, max) }.getOrElse { oaArxivRecent(p, days, max) }
 
     fun openAlexUrl(p: String) =
         "https://openalex.org/works?filter=title_and_abstract.search:" + URLEncoder.encode("\"" + p.replace("\"", "") + "\"", "UTF-8")
 
-    /** A spread-out sample of AI/ML/NLP papers from 6–18 months ago, used as the "already known" baseline. */
-    suspend fun arxivBaseline(perWindow: Int = 300): List<Paper> {
-        // Same categories as [arxivListings], so the comparison is like-for-like.
+    /**
+     * A spread-out sample of AI/ML papers from 6–18 months ago, used as the "already known" baseline.
+     * Fetched from OpenAlex (fast, generous limits); falls back to arXiv's own API if OpenAlex is unavailable.
+     */
+    suspend fun arxivBaseline(): List<Paper> =
+        openAlexArxivSample(listOf(180, 240, 300, 360, 450, 540), windowDays = 20, perWindow = 200)
+            .takeIf { it.size >= 500 } ?: arxivSample(listOf(180, 270, 365, 540), 300, 20)
+
+    /** The last 3 months of AI/ML research, sampled every two weeks — what the radar's history is mined from. */
+    suspend fun arxivLastThreeMonths(): List<Paper> =
+        openAlexArxivSample(listOf(0, 14, 28, 42, 56, 70, 84), windowDays = 14, perWindow = 120)
+            .takeIf { it.size >= 300 } ?: arxivSample(listOf(0, 14, 28, 42, 56, 70, 84), 120, 14)
+
+    /**
+     * Random samples of arXiv papers in OpenAlex's "Artificial Intelligence" and "Computer Vision" subfields
+     * (the same kind of papers as the arXiv listings the radar reads today), one sample per date window.
+     */
+    private suspend fun openAlexArxivSample(daysAgo: List<Int>, windowDays: Int, perWindow: Int): List<Paper> {
+        val today = java.time.LocalDate.now()
+        return daysAgo.flatMap { d ->
+            runCatching {
+                val from = today.minusDays((d + windowDays).toLong())
+                val to = today.minusDays(d.toLong())
+                val url = "https://api.openalex.org/works?filter=primary_location.source.id:S4306400194," +
+                    "primary_topic.subfield.id:subfields/1702|subfields/1707,from_publication_date:$from,to_publication_date:$to," +
+                    "has_abstract:true&sample=$perWindow&seed=${d + 1}&per-page=${minOf(perWindow, 200)}" +
+                    "&select=title,publication_date,abstract_inverted_index,primary_location"
+                val results = AppJson.parseToJsonElement(openAlexGet(url, maxBytes = 8_000_000)).jsonObject["results"]!!.jsonArray
+                results.mapNotNull { r ->
+                    val o = r.jsonObject
+                    val title = o.s("title").ifBlank { return@mapNotNull null }
+                    // OpenAlex stores abstracts as {word: [positions]}; rebuild the text in order.
+                    val inv = o["abstract_inverted_index"] as? JsonObject ?: return@mapNotNull null
+                    val words = ArrayList<Pair<Int, String>>()
+                    inv.forEach { (w, ps) -> ps.jsonArray.forEach { words += it.jsonPrimitive.content.toInt() to w } }
+                    val abstract = words.sortedBy { it.first }.joinToString(" ") { it.second }
+                    val landing = (o["primary_location"] as? JsonObject)?.s("landing_page_url").orEmpty()
+                    Paper(title, abstract, landing.ifBlank { "https://openalex.org" }, Text.parseDate(o.s("publication_date")) ?: 0)
+                }
+            }.getOrDefault(emptyList())
+        }.distinctBy { it.url }
+    }
+
+    private suspend fun arxivSample(daysAgo: List<Int>, perWindow: Int, windowDays: Int): List<Paper> {
+        // Same categories as [arxivListings], so comparisons are like-for-like.
         val q = arxivListings.joinToString(" OR ", "(", ")") { "cat:" + it.substringAfterLast('/') }
-        return listOf(180, 270, 365, 540).flatMap { daysAgo ->
-            runCatching { papers(arxiv("$q AND ${window(daysAgo + 20, daysAgo)}", perWindow)) }.getOrDefault(emptyList())
+        return daysAgo.flatMap { d ->
+            runCatching { papers(arxiv("$q AND ${window(d + windowDays, d)}", perWindow)) }.getOrDefault(emptyList())
         }.distinctBy { it.url }
     }
 

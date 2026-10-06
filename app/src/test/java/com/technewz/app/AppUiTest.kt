@@ -63,7 +63,7 @@ class AppUiTest {
         androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(app)
         db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java).allowMainThreadQueries().build()
         c = AppContainer(app, db)
-        c.settings.update { it.copy(onboarded = true, lastNewsRefresh = now, lastJobsRefresh = now, lastRadarRefresh = now, keywords = emptyList()) }
+        c.settings.update { it.copy(onboarded = true, lastNewsRefresh = now, lastJobsRefresh = now, lastRadarRefresh = now, keywords = emptyList(), radarVersion = com.technewz.app.data.RadarRepository.RULES_VERSION) }
         c.settings.saveProfile(com.technewz.app.data.Profile())
         db.articles().insertAll(
             listOf(
@@ -82,6 +82,18 @@ class AppUiTest {
                 usage = null, usageSource = null, usageUrl = null, simpleWhat = null, simpleUsage = null, papers30 = 12, papersPrior = 9,
                 papersTotal = 40, firstSeen = now - 300L * 86_400_000L, newsMentions = 1, jobMentions = 0, jobCompanies = "", repo = null,
                 repoStars = null, evidence = "[]", score = 3.0, checkedAt = now, discoveredAt = now,
+            )
+        )
+        // A term first spotted ~6 weeks ago, with a supporting source, for the 3-month timeline.
+        db.terms().upsert(
+            TermEntity(
+                key = "world action model", term = "World action models (WAMs)", shortForm = "WAMs", kind = "Concept",
+                status = TermStatus.NEW, reason = "Took off in 2026", what = "World action models (WAMs) are large embodied policies.",
+                whatSource = "arXiv: Paper", whatUrl = "https://arxiv.org/abs/2", usage = null, usageSource = null, usageUrl = null,
+                simpleWhat = null, simpleUsage = null, papers30 = 60, papersPrior = 90, papersTotal = 334, firstSeen = null,
+                newsMentions = 0, jobMentions = 0, jobCompanies = "", repo = null, repoStars = null,
+                evidence = """[{"title":"SplineWAM: Adaptive Action Horizons","url":"https://arxiv.org/abs/3","source":"arXiv","type":"paper"}]""",
+                score = 2.0, checkedAt = now, discoveredAt = now - 42L * 86_400_000L,
             )
         )
     }
@@ -128,8 +140,27 @@ class AppUiTest {
         shown("Cache-Augmented Generation (CAG)")
         rule.onNodeWithText("See all").performClick()
         rule.waitForIdle()
-        shown("WHAT IT IS")
+        rule.waitUntil(30_000) { rule.onAllNodesWithText("WHAT IT IS").fetchSemanticsNodes().isNotEmpty() }
         shown("“Cache-augmented generation preloads documents into the model context.”")
+    }
+
+    @Test fun radarKeepsAThreeMonthTimelineWithSources() {
+        start()
+        rule.onNodeWithContentDescription("AI & Data").performClick()
+        rule.waitForIdle()
+        shown("See all")
+        rule.onNodeWithText("See all").performClick()
+        rule.waitForIdle()
+        shown("THIS WEEK · 1 TERM")
+        val month = java.time.Instant.ofEpochMilli(now - 42L * 86_400_000L).atZone(java.time.ZoneId.systemDefault()).let {
+            it.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()) + " " + it.year
+        }
+        rule.onNode(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).performScrollToNode(hasText("World action models (WAMs)"))
+        shown("World action models (WAMs)")
+        rule.onAllNodesWithText("$month · 1 term".uppercase()).onFirst().assertExists()
+        // Supporting sources are visible without expanding anything.
+        rule.onNode(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).performScrollToNode(hasText("SplineWAM: Adaptive Action Horizons"))
+        shown("SplineWAM: Adaptive Action Horizons")
     }
 
     @Test fun jobsInternshipFilter() {

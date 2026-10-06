@@ -336,7 +336,7 @@ object TrendingSources {
                 subtitle = "arXiv $id", url = "https://huggingface.co/papers/$id",
                 metric = "▲ ${paper.l("upvotes") ?: 0}",
             )
-        }.sortedByDescending { it.metric.removePrefix("▲ ").toIntOrNull() ?: 0 }
+        }.distinctBy { it.id }.sortedByDescending { it.metric.removePrefix("▲ ").toIntOrNull() ?: 0 }
     }
 
     suspend fun githubRepos(): List<Item> {
