@@ -37,7 +37,7 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
-        unitTests.all { it.maxHeapSize = "3g"; it.environment("LIVE", System.getenv("LIVE") ?: "") }
+        unitTests.all { it.maxHeapSize = System.getenv("TEST_HEAP") ?: "3g"; it.environment("LIVE", System.getenv("LIVE") ?: "") }
         unitTests.all { it.systemProperty("roborazzi.test.record", "true") }
     }
     buildFeatures {

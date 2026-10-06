@@ -104,6 +104,7 @@ class SettingsViewModel(private val c: AppContainer, private val appContext: Con
             c.settings.update { cur ->
                 cur.copy(
                     geminiKey = d.geminiKey, geminiModel = d.geminiModel, adzunaAppId = d.adzunaAppId, adzunaAppKey = d.adzunaAppKey,
+                    openAlexKey = d.openAlexKey,
                     city = d.city, countryCode = d.countryCode, keywords = d.keywords, alertsEnabled = d.alertsEnabled,
                     backgroundRefresh = d.backgroundRefresh, theme = d.theme, aiSummaries = d.aiSummaries, greenhouseBoards = d.greenhouseBoards,
                     leverBoards = d.leverBoards, ashbyBoards = d.ashbyBoards,
@@ -195,6 +196,14 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
             Hint("Gemini powers resume reading, match analysis and cover letters (and rewritten summaries if enabled). The key stays on this device and is sent only to Google. If the model is retired, the app automatically picks the newest Flash model.")
         }
 
+        // ---- Research sources ----
+        SectionLabel("Skills Radar verification")
+        FieldGroup {
+            Hint("The radar checks every term against OpenAlex (when it took off) and arXiv (is it active now). Without a key, OpenAlex shares a small free daily budget per network — on some mobile networks it can run out, and the radar then pauses until the next day. A free personal key avoids that.")
+            Field("OpenAlex API key (optional, free)", s.openAlexKey) { v -> vm.update { it.copy(openAlexKey = v.trim()) } }
+            TextButton(onClick = { Browser.open(context, "https://help.openalex.org/api/authentication/", toolbar) }) { Text("How to get a free OpenAlex key") }
+        }
+
         // ---- Location ----
         SectionLabel("Location (for on-site roles)")
         FieldGroup {
@@ -257,6 +266,20 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center,
                     ) { Text(m.name.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelLarge) }
+                }
+            }
+        }
+
+        // ---- Diagnostics ----
+        var crash by remember { mutableStateOf(com.technewz.app.CrashLog.read(context)) }
+        crash?.let { report ->
+            SectionLabel("Diagnostics")
+            FieldGroup {
+                Text("The app crashed last time", style = MaterialTheme.typography.titleSmall)
+                Hint(report.lineSequence().take(4).joinToString(System.lineSeparator()))
+                Row {
+                    TextButton(onClick = { Browser.copy(context, "Crash report", report) }) { Text("Copy crash report") }
+                    TextButton(onClick = { com.technewz.app.CrashLog.clear(context); crash = null }) { Text("Clear") }
                 }
             }
         }

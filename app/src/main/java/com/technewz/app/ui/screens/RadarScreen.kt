@@ -85,6 +85,7 @@ import kotlinx.coroutines.launch
 class RadarViewModel(private val c: AppContainer) : ViewModel() {
     val terms: StateFlow<List<TermEntity>?> = c.db.terms().observeVisible().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val progress: StateFlow<String?> = c.radarProgress
+    val note: StateFlow<String?> = c.radarNote
     val filter = MutableStateFlow("All")
 
     init {
@@ -107,7 +108,7 @@ private fun growthLine(t: TermEntity): String? {
     val prior = t.papersPrior / 150.0
     val now = t.papers30 / 30.0
     val x = if (prior > 0) now / prior else null
-    return "${t.papers30} AI/ML papers in 30 days" + (x?.takeIf { it >= 1.2 }?.let { " · ${"%.1f".format(it)}× faster" } ?: "")
+    return "${t.papers30} arXiv papers in 30 days" + (x?.takeIf { it >= 1.2 }?.let { " · ${"%.1f".format(it)}× faster" } ?: "")
 }
 
 /** Preview strip shown at the top of the AI & Data tab. */
@@ -115,6 +116,7 @@ private fun growthLine(t: TermEntity): String? {
 fun RadarBlock(vm: RadarViewModel, onOpenRadar: () -> Unit) {
     val terms by vm.terms.collectAsState()
     val progress by vm.progress.collectAsState()
+    val note by vm.note.collectAsState()
     val accent = Accents.ai
     Column {
         Row(Modifier.padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -123,7 +125,7 @@ fun RadarBlock(vm: RadarViewModel, onOpenRadar: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text("Skills Radar", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    progress ?: "New & rising terms and tools, verified",
+                    progress ?: note ?: "New & rising terms and tools from the last 3 months, verified",
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -139,7 +141,7 @@ fun RadarBlock(vm: RadarViewModel, onOpenRadar: () -> Unit) {
                     else Icon(Icons.Rounded.Radar, null, tint = accent.start)
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        if (progress != null) "Scanning today's research, news, repos and job posts. Each term is checked against arXiv before it appears."
+                        if (progress != null) "Scanning the last 3 months of research, news and repos. Each term is checked against OpenAlex and arXiv before it appears."
                         else "No verified new terms yet — open the radar to scan.",
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -208,7 +210,7 @@ fun RadarScreen(vm: RadarViewModel, onBack: () -> Unit, onMessage: (String) -> U
                     Column(Modifier.padding(horizontal = 12.dp)) {
                         GradientText("Skills Radar", Accents.ai, MaterialTheme.typography.displaySmall)
                         Text(
-                            "New and rising AI, ML & data-science terms and tools. Found in today's research, news, GitHub and job posts. Each must have taken off within the last 3 years (OpenAlex publication history), be active in AI/ML research now (arXiv) and be explained by a quoted source.",
+                            (terms?.let { "${it.size} terms verified in the last 3 months. " } ?: "") + "New and rising AI, ML & data-science terms and tools, found in research, news, GitHub and job posts. Each must have taken off within the last 3 years (OpenAlex publication history), be active in AI/ML research now (arXiv) and be explained by a quoted source.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         progress?.let {
@@ -235,7 +237,21 @@ fun RadarScreen(vm: RadarViewModel, onBack: () -> Unit, onMessage: (String) -> U
                     }
                 }
             }
-            items(list, key = { it.key }) { t -> TermCard(t, vm.evidence(t), Modifier.animateItem()) }
+            // 3-month timeline: "This week", then one group per month, newest first.
+            val zone = java.time.ZoneId.systemDefault()
+            val weekAgo = System.currentTimeMillis() - 7L * 86_400_000
+            val groups = list.groupBy { t ->
+                if (t.discoveredAt >= weekAgo) "This week"
+                else java.time.Instant.ofEpochMilli(t.discoveredAt).atZone(zone).let { d ->
+                    d.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()) + " " + d.year
+                }
+            }
+            groups.forEach { (label, terms) ->
+                item("h-$label") {
+                    com.technewz.app.ui.components.SectionLabel("$label · ${terms.size} term${if (terms.size == 1) "" else "s"}", Modifier.padding(top = 6.dp))
+                }
+                items(terms, key = { it.key }) { t -> TermCard(t, vm.evidence(t), Modifier.animateItem()) }
+            }
         }
     }
 }
@@ -252,13 +268,15 @@ fun TermCard(t: TermEntity, evidence: List<Evidence>, modifier: Modifier = Modif
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusPill(t)
                 Spacer(Modifier.width(8.dp))
-                t.firstSeen?.let {
-                    Text(
-                        if (t.kind == "Tool") "first released " + Text.timeAgo(it)
-                        else "took off in " + java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).year,
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                val spotted = java.time.Instant.ofEpochMilli(t.discoveredAt).atZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("d MMM"))
+                Text(
+                    "spotted $spotted" + (t.firstSeen?.let {
+                        if (t.kind == "Tool") " · first released " + Text.timeAgo(it)
+                        else " · took off in " + java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).year
+                    } ?: ""),
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Spacer(Modifier.height(10.dp))
             Text(t.term, style = MaterialTheme.typography.headlineSmall, color = a.start)
@@ -296,20 +314,15 @@ fun TermCard(t: TermEntity, evidence: List<Evidence>, modifier: Modifier = Modif
                 )
             }
 
-            Spacer(Modifier.height(10.dp))
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { showSources = !showSources }.padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Verified, null, tint = a.start, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Why it's on the radar · ${evidence.size} sources", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                Icon(if (showSources) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+                Text("Sources", style = MaterialTheme.typography.labelLarge)
             }
-            if (showSources) {
-                Text(t.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(6.dp))
-                evidence.forEachIndexed { i, e ->
+            val shown = if (showSources) evidence else evidence.take(3)
+            run {
+                shown.forEachIndexed { i, e ->
                     if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Row(
                         Modifier.fillMaxWidth().clickable { Browser.open(context, e.url, toolbar) }.padding(vertical = 10.dp),
@@ -327,6 +340,20 @@ fun TermCard(t: TermEntity, evidence: List<Evidence>, modifier: Modifier = Modif
                         Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+            if (showSources) {
+                Spacer(Modifier.height(4.dp))
+                Text("Why it's on the radar: ${t.reason}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { showSources = !showSources }.padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (showSources) "Show less" else if (evidence.size > 3) "Show all ${evidence.size} sources & the numbers" else "Show the numbers",
+                    style = MaterialTheme.typography.labelLarge, color = a.start, modifier = Modifier.weight(1f),
+                )
+                Icon(if (showSources) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null, tint = a.start)
             }
         }
     }

@@ -38,7 +38,7 @@ class NewsRepository(
     data class RefreshResult(val newArticles: Int, val failedFeeds: List<String>, val aiNote: String?)
 
     // All refresh work runs on a background CPU pool so scrolling never stalls (fixes "isn't responding").
-    suspend fun refresh(): RefreshResult = withContext(Dispatchers.Default) {
+    suspend fun refresh(): RefreshResult = withContext(HeavyWork.dispatcher) {
         val s = settings.current()
         val now = System.currentTimeMillis()
 
@@ -163,7 +163,7 @@ class NewsRepository(
     }
 
     // ---------------- Trending (AI tab) ----------------
-    suspend fun refreshTrendingIfStale(force: Boolean = false) = withContext(Dispatchers.Default) {
+    suspend fun refreshTrendingIfStale(force: Boolean = false) = withContext(HeavyWork.dispatcher) {
         val last = db.trending().lastFetched() ?: 0
         if (!force && System.currentTimeMillis() - last < TimeUnit.MINUTES.toMillis(60)) return@withContext
         val now = System.currentTimeMillis()

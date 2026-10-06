@@ -97,38 +97,52 @@ object TermMiner {
      * Acronym definitions come from any document; title phrases (2–3 words) come from document titles.
      */
     /** Inverted index so phrase lookups only scan documents that contain every word of the phrase. */
+    // Memory matters here: this runs on phones with ~256 MB heaps, so postings are plain int arrays.
+    private class IntList { var a = IntArray(4); var n = 0; fun add(v: Int) { if (n == a.size) a = a.copyOf(n * 2); a[n++] = v } }
+
     private class Index(texts: List<String>) {
         val padded = texts.map { " $it " }
-        private val postings = HashMap<String, MutableList<Int>>()
+        private val postings = HashMap<String, IntList>()
 
         init {
-            texts.forEachIndexed { i, t -> t.split(' ').toSet().forEach { w -> if (w.isNotEmpty()) postings.getOrPut(w) { mutableListOf() } += i } }
+            padded.forEachIndexed { i, t -> t.split(' ').toHashSet().forEach { w -> if (w.isNotEmpty()) postings.getOrPut(w) { IntList() }.add(i) } }
         }
 
         fun containing(phrase: String): List<Int> {
             val words = phrase.split(' ').filter { it.isNotEmpty() }
             if (words.isEmpty()) return emptyList()
-            val lists = words.map { postings[it] ?: return emptyList() }.sortedBy { it.size }
-            var acc: Collection<Int> = lists.first()
+            val lists = words.map { postings[it] ?: return emptyList() }.sortedBy { it.n }
+            var acc: List<Int> = lists.first().let { l -> List(l.n) { l.a[it] } }
             for (l in lists.drop(1)) {
-                val s = l.toHashSet()
+                val s = HashSet<Int>(l.n * 2).apply { for (k in 0 until l.n) add(l.a[k]) }
                 acc = acc.filter { it in s }
             }
             return acc.filter { padded[it].contains(" $phrase ") }
         }
     }
 
-    fun candidates(recent: List<Doc>, baseline: List<Doc>, minDocs: Int = 3, minLift: Double = 3.0): List<Candidate> {
-        val recentFieldN = recent.count { it.type != "job" }
-        val baseIdx = Index(baseline.map { normalize(it.title + " " + it.text) })
+    private val acronymToken = Regex("[A-Za-z0-9][A-Za-z0-9-]*")
+
+    /** Index of acronym-like tokens only (2+ capitals) — all the acronym lookup needs, at a fraction of the memory. */
+    private fun acronymIndex(docs: List<Doc>) = HashMap<String, IntList>().also { m ->
+        docs.forEachIndexed { i, d ->
+            acronymToken.findAll(d.title + " " + d.text).map { it.value }.filter { t -> t.count(Char::isUpperCase) >= 2 }.toHashSet()
+                .forEach { m.getOrPut(it) { IntList() }.add(i) }
+        }
+    }
+    private fun IntList?.toSet(): Set<Int> = if (this == null) emptySet() else HashSet<Int>(n * 2).also { s -> for (k in 0 until n) s.add(a[k]) }
+
+    fun candidates(recentAll: List<Doc>, baseline: List<Doc>, minDocs: Int = 3, minLift: Double = 3.0): List<Candidate> {
+        // Field terms come from research, news and repos. Job ads are a different kind of text (HR boilerplate,
+        // tool lists) and are far larger, so they are excluded here and only counted later for verified terms.
+        val recent = recentAll.filter { it.type != "job" }
+        val recentFieldN = recent.size
+        val baseIdx = Index(baseline.map { normalize(it.title + " " + it.text.take(2000)) })
         val baseCache = HashMap<String, Int>()
         fun baselineDf(key: String): Int = baseCache.getOrPut(key) { baseIdx.containing(key).size }
-        val recentIdx = Index(recent.map { normalize(it.title + " " + it.text) })
-        fun rawIndex(docs: List<Doc>) = HashMap<String, MutableSet<Int>>().also { m ->
-            docs.forEachIndexed { i, d -> Regex("[A-Za-z0-9-]+").findAll(d.title + " " + d.text).forEach { m.getOrPut(it.value) { mutableSetOf() } += i } }
-        }
-        val rawTokens = rawIndex(recent)
-        val baseRaw = rawIndex(baseline)
+        val recentIdx = Index(recent.map { normalize(it.title + " " + it.text.take(3000)) })
+        val rawTokens = acronymIndex(recent)
+        val baseRaw = acronymIndex(baseline)
 
         // 1. acronym-defined terms
         val byKey = HashMap<String, MutableList<Pair<Doc, Pair<String, String>>>>()
@@ -142,13 +156,13 @@ object TermMiner {
         for ((key, defs) in byKey) {
             val sf = defs.groupingBy { it.second.first }.eachCount().maxBy { it.value }.key
             val lf = defs.groupingBy { it.second.second }.eachCount().maxBy { it.value }.key
-            val ids = recentIdx.containing(key).toHashSet().apply { addAll(rawTokens[sf].orEmpty()) }
+            val ids = recentIdx.containing(key).toHashSet().apply { addAll(rawTokens[sf].toSet()) }
             val docs = ids.map { recent[it] }
             if (docs.map { it.id }.distinct().size < minDocs) continue
             // Field terms must appear in research, news or repos, not only in job ads (HR boilerplate like EEO).
             if (docs.count { it.type != "job" } < 2) continue
             // Count the baseline exactly like the recent corpus: long form OR acronym.
-            val base = baseIdx.containing(key).toHashSet().apply { addAll(baseRaw[sf].orEmpty()) }.size
+            val base = baseIdx.containing(key).toHashSet().apply { addAll(baseRaw[sf].toSet()) }.size
             val sc = score(docs, base, recentFieldN, baseline.size, minLift) ?: continue
             out += Candidate(key, lf, sf, docs.distinctBy { it.id }, base, sc)
         }
@@ -281,8 +295,17 @@ object TermMiner {
             if (sc == 0.0) return@bestSentence null
             if (selfReference.containsMatchIn(s)) sc -= 2.0
             if (results.containsMatchIn(s)) sc -= 2.0
-            sc
+            sc - complexity(s)
         }?.takeIf { p -> subject.containsMatchIn(p.sentence) || appositive.containsMatchIn(p.sentence) || !selfReference.containsMatchIn(p.sentence) }
+    }
+
+    /** Rough jargon measure: long words, acronyms/names and parenthetical asides make a sentence harder to read. */
+    fun complexity(s: String): Double {
+        val words = s.split(' ').filter { it.isNotBlank() }
+        if (words.isEmpty()) return 0.0
+        val avgLen = words.sumOf { it.trim(',', '.', ';', ':', '(', ')').length }.toDouble() / words.size
+        val caps = words.drop(1).count { w -> w.count(Char::isUpperCase) >= 2 }
+        return (avgLen - 5.5).coerceAtLeast(0.0) * 0.8 + caps * 0.25 + s.count { it == '(' } * 0.3
     }
 
     /** Best verbatim sentence that says where/how the term is used. */

@@ -151,7 +151,8 @@ data class TermEntity(
 
 @Dao
 interface TermDao {
-    @Query("SELECT * FROM terms WHERE status != 'Rejected' ORDER BY score DESC")
+    /** Everything verified, newest first — the radar keeps a 3-month record. */
+    @Query("SELECT * FROM terms WHERE status != 'Rejected' ORDER BY discoveredAt DESC, score DESC")
     fun observeVisible(): Flow<List<TermEntity>>
 
     @Query("SELECT * FROM terms")
@@ -165,6 +166,10 @@ interface TermDao {
 
     @Query("DELETE FROM terms WHERE checkedAt < :before")
     suspend fun prune(before: Long)
+
+    /** Verified terms are kept for 3 months from when they were first spotted; rejections for a month. */
+    @Query("DELETE FROM terms WHERE (status != 'Rejected' AND discoveredAt < :keepVerifiedAfter) OR (status = 'Rejected' AND checkedAt < :keepRejectedAfter)")
+    suspend fun pruneHistory(keepVerifiedAfter: Long, keepRejectedAfter: Long)
 }
 
 @Dao
@@ -225,8 +230,17 @@ fun JobEntity.toListItem() = JobListItem(
     postedAt, salary, matchScore, matchedSkills, missingSkills, scamFlags,
 )
 
+/** Job text for the Skills Radar (description trimmed in SQL, so full records never load into memory). */
+data class JobText(
+    val id: String, val title: String, val company: String, val url: String, val source: String,
+    val postedAt: Long, val description: String,
+)
+
 @Dao
 interface JobDao {
+    @Query("SELECT id, title, company, url, source, postedAt, substr(description, 1, 3000) AS description FROM jobs")
+    suspend fun texts(): List<JobText>
+
     @Query(
         "SELECT id, title, company, location, isRemote, employmentType, isInternship, source, directFromEmployer, " +
             "postedAt, salary, matchScore, matchedSkills, missingSkills, scamFlags FROM jobs ORDER BY postedAt DESC"

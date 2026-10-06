@@ -27,7 +27,7 @@ class JobsRepository(
     data class RefreshResult(val total: Int, val newCount: Int, val failedSources: List<String>)
 
     /** Jobs change slowly and the APIs are free/public, so we sync them at most hourly unless forced. */
-    suspend fun refresh(force: Boolean = false): RefreshResult? = withContext(Dispatchers.Default) {
+    suspend fun refresh(force: Boolean = false): RefreshResult? = withContext(HeavyWork.dispatcher) {
         val s = settings.current()
         val now = System.currentTimeMillis()
         if (!force && now - s.lastJobsRefresh < TimeUnit.MINUTES.toMillis(55)) return@withContext null
@@ -82,7 +82,7 @@ class JobsRepository(
     }
 
     /** Re-score all jobs after the profile changes. */
-    suspend fun rescore() = withContext(Dispatchers.Default) {
+    suspend fun rescore() = withContext(HeavyWork.dispatcher) {
         val userSkills = Skills.normalize(settings.currentProfile().skills)
         dao.upsertAll(dao.all().map { j ->
             val m = Skills.match(userSkills, j.title + "\n" + j.description)

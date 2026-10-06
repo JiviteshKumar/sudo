@@ -64,7 +64,8 @@ class LiveTruthTest {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java).build()
         val c = AppContainer(app, db)
-        c.settings.update { it.copy(onboarded = true, keywords = emptyList()) }
+        c.settings.update { it.copy(onboarded = true, keywords = emptyList(), openAlexKey = System.getenv("OPENALEX_KEY").orEmpty()) }
+        ResearchSources.openAlexKey = System.getenv("OPENALEX_KEY").orEmpty()
         val now = System.currentTimeMillis()
         val failures = mutableListOf<String>()
         line("# Live truth audit"); line(); line("Run: ${java.time.ZonedDateTime.now()}"); line()
@@ -79,7 +80,8 @@ class LiveTruthTest {
         val terms = db.terms().all()
         line("Pipelines: ${articles.size} articles from ${articles.map { it.source }.distinct().size} sources (failed feeds: ${nr.failedFeeds}), " +
             "${jobs.size} jobs (failed sources: ${jr?.failedSources}), radar: ${rr?.candidates} candidates, ${rr?.checked} verified checks, " +
-            "${terms.count { it.status != "Rejected" }} accepted / ${terms.count { it.status == "Rejected" }} rejected")
+            "${terms.count { it.status != "Rejected" }} accepted / ${terms.count { it.status == "Rejected" }} rejected" +
+            if (rr?.paused == true) " — PAUSED: OpenAlex daily budget reached (terms not checked are not counted as passed or failed)" else "")
         line()
 
         // ------------------------------------------------------------ 1. news provenance against the publishers' own feeds
@@ -205,10 +207,18 @@ class LiveTruthTest {
             // c) arXiv numbers are reproducible and the acronym expansion is real
             if (t.kind == "Concept") {
                 val long = t.term.substringBefore(" (")
-                val again = ResearchSources.arxivCount(long, 30, 0)
-                if (kotlin.math.abs(again - t.papers30) > maxOf(2, t.papers30 / 10)) issues += "arXiv 30-day count ${t.papers30} not reproducible (now $again)"
+                // Same source (OpenAlex) must reproduce the app's numbers.
+                val again = ResearchSources.oaArxivCount(long, 30, 0)
+                if (kotlin.math.abs(again - t.papers30) > maxOf(2, t.papers30 / 10)) issues += "30-day count ${t.papers30} not reproducible (OpenAlex now $again)"
+                // Independent second opinion from arXiv's own API (skipped, never passed, if arXiv is unreachable).
+                val arxivNow = runCatching { ResearchSources.arxivCount(long, 30, 0) }.getOrNull()
+                when {
+                    arxivNow == null -> line("  - arXiv API unreachable — independent activity check skipped")
+                    arxivNow == 0 -> issues += "arXiv's own search finds no AI/ML papers on it in the last 30 days"
+                    else -> line("  - arXiv's own search: $arxivNow AI/ML papers in the last 30 days (app/OpenAlex: ${t.papers30})")
+                }
                 if (t.shortForm != null) {
-                    val both = ResearchSources.arxivRecent(long, 3650, 50).count { p -> p.abstract.contains(t.shortForm!!) }
+                    val both = ResearchSources.oaArxivRecent(long, 3650, 50).count { p -> p.abstract.contains(t.shortForm!!) }
                     if (both == 0) issues += "no paper uses “$long” together with ${t.shortForm}"
                 }
                 // d) Is it really new? Two independent sources must agree.
@@ -221,12 +231,12 @@ class LiveTruthTest {
                     emergedNow == null || emergedNow < year - 3 -> issues += "OpenAlex says it is NOT recent (took off: ${emergedNow ?: "never surged"})"
                     shownYear != emergedNow -> issues += "app shows took-off year $shownYear but OpenAlex now gives $emergedNow"
                 }
-                val fourToFiveYearsAgo = ResearchSources.arxivCount(long, 1825, 1460)
-                val yearlyNow = again * 12
-                if (fourToFiveYearsAgo > minOf(30, maxOf(3, yearlyNow / 10))) issues += "arXiv: already $fourToFiveYearsAgo AI/ML papers 4–5 years ago (vs ~$yearlyNow/yr now) — not new"
+                val fourToFiveYearsAgo = runCatching { ResearchSources.arxivCount(long, 1825, 1460) }.getOrNull()
+                val yearlyNow = (arxivNow ?: again) * 12
+                if (fourToFiveYearsAgo != null && fourToFiveYearsAgo > minOf(30, maxOf(3, yearlyNow / 10))) issues += "arXiv: already $fourToFiveYearsAgo AI/ML papers 4–5 years ago (vs ~$yearlyNow/yr now) — not new"
                 val expectedStatus = if (emergedNow != null && emergedNow >= year - 1) "New" else "Rising"
                 if (emergedNow != null && t.status != expectedStatus) issues += "label ${t.status} but numbers say $expectedStatus"
-                line("  - Age check — OpenAlex took off: ${emergedNow ?: "?"}; arXiv AI/ML papers 4–5 years ago: $fourToFiveYearsAgo vs ~$yearlyNow/yr now")
+                line("  - Age check — OpenAlex took off: ${emergedNow ?: "?"}; arXiv AI/ML papers 4–5 years ago: ${fourToFiveYearsAgo ?: "arXiv unreachable (skipped)"} vs ~$yearlyNow/yr now")
             }
             line("- **${t.term}** [${t.status} ${t.kind}] — ${t.reason}")
             line("  - What: “${t.what}” — ${t.whatSource} → ${if (whatOk == true) "verbatim ✓" else if (whatOk == null) "source unreachable" else "✗"}")
