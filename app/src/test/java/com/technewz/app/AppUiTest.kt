@@ -138,7 +138,7 @@ class AppUiTest {
         rule.waitForIdle()
         shown("Skills Radar")
         shown("Cache-Augmented Generation (CAG)")
-        rule.onNodeWithText("See all").performClick()
+        rule.onNodeWithText("See all", substring = true).performClick()
         rule.waitForIdle()
         rule.waitUntil(30_000) { rule.onAllNodesWithText("WHAT IT IS").fetchSemanticsNodes().isNotEmpty() }
         shown("“Cache-augmented generation preloads documents into the model context.”")
@@ -148,8 +148,8 @@ class AppUiTest {
         start()
         rule.onNodeWithContentDescription("AI & Data").performClick()
         rule.waitForIdle()
-        shown("See all")
-        rule.onNodeWithText("See all").performClick()
+        rule.waitUntil(30_000) { rule.onAllNodesWithText("See all", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("See all", substring = true).performClick()
         rule.waitForIdle()
         shown("THIS WEEK · 1 TERM")
         val month = java.time.Instant.ofEpochMilli(now - 42L * 86_400_000L).atZone(java.time.ZoneId.systemDefault()).let {

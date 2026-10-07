@@ -272,7 +272,7 @@ fun NewsScreen(
                             )
                         }
                     }
-                    itemsIndexed(list.filterIndexed { i, _ -> i != heroIndex }, key = { _, c -> c.primary.id }) { _, cl ->
+                    itemsIndexed(list.filterIndexed { i, _ -> i != heroIndex }, key = { _, c -> c.primary.id }, contentType = { _, _ -> "story" }) { _, cl ->
                         NewsCard(
                             cl, accent,
                             onClick = { open(cl.primary) },

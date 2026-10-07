@@ -48,13 +48,15 @@ class RadarRepository(
         val s = settings.current()
         ResearchSources.openAlexKey = s.openAlexKey
         val now = System.currentTimeMillis()
-        // When the verification rules change, results made under the old rules are discarded and re-checked.
+        // When the verification rules change, nothing is deleted: verified terms stay visible, are marked for
+        // re-checking (checkedAt = 0) and are re-verified first; only those that fail the new rules are removed.
         val rulesChanged = s.radarVersion < RULES_VERSION
         if (rulesChanged) {
-            dao.deleteAll()
+            dao.markAllForRecheck()
             settings.update { it.copy(radarVersion = RULES_VERSION) }
         }
-        if (!force && !rulesChanged && now - s.lastRadarRefresh < TimeUnit.HOURS.toMillis(12)) return@withContext null
+        // Look for new terms in the background at most every 3 hours; everything found so far stays on screen.
+        if (!force && !rulesChanged && now - s.lastRadarRefresh < TimeUnit.HOURS.toMillis(3)) return@withContext null
 
         // Memory-heavy phase (reading and mining text) runs under the shared lock; the slow, network-bound
         // verification below does not, so it never blocks news or jobs refreshes.
@@ -76,12 +78,20 @@ class RadarRepository(
         val known = dao.all().associateBy { it.key }
         val firstRun = known.none { it.value.status != TermStatus.REJECTED }
 
-        // Re-check verified terms every 3 days, rejected ones every 10 days; otherwise reuse.
-        val toCheck = candidates.filter { c ->
+        // Terms awaiting a rules re-check go first (even if they aren't in today's candidates), then new candidates.
+        // Verified terms are otherwise re-checked every 3 days, rejected ones every 10 days.
+        val recheck = known.values.filter { it.checkedAt == 0L && it.kind == "Concept" && it.status != TermStatus.REJECTED }
+            .map { t ->
+                val long = t.term.substringBefore(" (")
+                TermMiner.Candidate(t.key, long, t.shortForm, emptyList(), 0, t.score, listOf(long))
+            }
+        val fresh = candidates.filter { c ->
             val k = known[c.key] ?: return@filter true
+            if (k.checkedAt == 0L) return@filter false
             val age = now - k.checkedAt
             if (k.status == TermStatus.REJECTED) age > 10 * day else age > 3 * day
         }
+        val toCheck = recheck + fresh
 
         val accepted = mutableListOf<String>()
         var rejected = 0
@@ -92,7 +102,7 @@ class RadarRepository(
         for (c in toCheck) {
             // Cheap OpenAlex screening first; the slow arXiv checks are spent only on promising terms.
             // Only the top candidates per scan go to OpenAlex, which keeps well inside its free daily budget.
-            if (arxivChecks >= maxChecks || screened >= 20) break
+            if (arxivChecks >= maxChecks || screened >= 20 + recheck.size) break
             screened++
             onProgress("Verifying “${c.display}” (${arxivChecks + 1}/$maxChecks)…")
             val outcome = try {
@@ -107,9 +117,10 @@ class RadarRepository(
             if (outcome.usedArxiv) arxivChecks++
             val prev = known[c.key]
             val t = outcome.term
-            // A term verified earlier stays in the 3-month record even if a later re-check is inconclusive.
+            // A verified term stays in the record when a routine re-check is inconclusive, but a term that fails
+            // a rules re-check (made under older, looser rules) is removed: it no longer meets the truth rules.
             if (t.status == TermStatus.REJECTED && prev != null && prev.status != TermStatus.REJECTED) {
-                dao.upsert(prev.copy(checkedAt = now))
+                if (prev.checkedAt == 0L) dao.upsert(t) else dao.upsert(prev.copy(checkedAt = now))
                 continue
             }
             dao.upsert(t)
@@ -130,7 +141,8 @@ class RadarRepository(
         }
         jobTextCache = null
 
-        dao.pruneHistory(keepVerifiedAfter = now - 90 * day, keepRejectedAfter = now - 30 * day)
+        // Verified terms are kept permanently; only rejected candidates are forgotten (after a month) so they can be re-checked.
+        dao.pruneRejected(now - 30 * day)
         if (s.alertsEnabled && !firstRun && accepted.isNotEmpty()) Notifications.radarAlert(context, accepted)
         settings.update { it.copy(lastRadarRefresh = if (budgetPaused) now - TimeUnit.HOURS.toMillis(9) else now) }
         if (budgetPaused) onProgress("Paused: OpenAlex's free daily limit was reached — will continue on a later scan")
