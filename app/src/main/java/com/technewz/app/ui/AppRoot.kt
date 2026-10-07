@@ -89,6 +89,8 @@ import com.technewz.app.ui.theme.TechNewzTheme
 import java.net.URLDecoder
 import java.net.URLEncoder
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 private data class Tab(val label: String, val icon: ImageVector, val accent: Accent)
 
@@ -100,10 +102,16 @@ private val tabs = listOf(
     Tab("Saved", Icons.Rounded.Bookmarks, Accents.saved),
 )
 
+private data class RootState(val theme: com.technewz.app.data.ThemeMode, val onboarded: Boolean)
+
 @Composable
 fun AppRoot(c: AppContainer, pendingRoute: String?, onRouteConsumed: () -> Unit) {
-    val settings by c.settings.settings.collectAsState(initial = null)
-    val s = settings
+    // Only the two values the root needs: routine settings writes during a refresh (timestamps etc.)
+    // must not redraw the whole app.
+    val rootState by remember {
+        c.settings.settings.map { RootState(it.theme, it.onboarded) }.distinctUntilChanged()
+    }.collectAsState(initial = null)
+    val s = rootState
     TechNewzTheme(s?.theme ?: com.technewz.app.data.ThemeMode.SYSTEM) {
         // Keep status/navigation bar icons readable when the in-app theme differs from the system theme.
         val view = androidx.compose.ui.platform.LocalView.current
@@ -128,7 +136,7 @@ fun AppRoot(c: AppContainer, pendingRoute: String?, onRouteConsumed: () -> Unit)
 }
 
 @Composable
-private fun AppNav(c: AppContainer, s: AppSettings, pendingRoute: String?, onRouteConsumed: () -> Unit) {
+private fun AppNav(c: AppContainer, s: RootState, pendingRoute: String?, onRouteConsumed: () -> Unit) {
     val nav = rememberNavController()
     val context = LocalContext.current
     val start = remember { if (s.onboarded) "home" else "onboarding" }

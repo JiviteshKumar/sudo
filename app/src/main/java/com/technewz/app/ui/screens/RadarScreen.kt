@@ -81,9 +81,17 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 
 class RadarViewModel(private val c: AppContainer) : ViewModel() {
     val terms: StateFlow<List<TermEntity>?> = c.db.terms().observeVisible().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Each term's sources, decoded once in the background (never on the UI thread while scrolling). */
+    val evidence: StateFlow<Map<String, List<Evidence>>> = c.db.terms().observeVisible()
+        .map { list -> list.associate { it.key to c.radar.evidenceOf(it) } }
+        .flowOn(kotlinx.coroutines.Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     val progress: StateFlow<String?> = c.radarProgress
     val note: StateFlow<String?> = c.radarNote
     val filter = MutableStateFlow("All")
@@ -94,7 +102,7 @@ class RadarViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun refresh(onMessage: (String) -> Unit) = viewModelScope.launch { c.refreshRadar(force = true)?.let(onMessage) }
-    fun evidence(t: TermEntity): List<Evidence> = c.radar.evidenceOf(t)
+
 }
 
 private fun statusAccent(t: TermEntity): Accent = when {
@@ -130,7 +138,7 @@ fun RadarBlock(vm: RadarViewModel, onOpenRadar: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            TextButton(onClick = onOpenRadar) { Text("See all") }
+            TextButton(onClick = onOpenRadar) { Text(if (terms.isNullOrEmpty()) "See all" else "See all ${terms!!.size}") }
         }
         Spacer(Modifier.height(10.dp))
         val list = terms.orEmpty()
@@ -192,6 +200,7 @@ fun RadarScreen(vm: RadarViewModel, onBack: () -> Unit, onMessage: (String) -> U
     val terms by vm.terms.collectAsState()
     val progress by vm.progress.collectAsState()
     val filter by vm.filter.collectAsState()
+    val evidence by vm.evidence.collectAsState()
     val list = terms.orEmpty().filter {
         when (filter) {
             "New" -> it.status == TermStatus.NEW
@@ -250,7 +259,7 @@ fun RadarScreen(vm: RadarViewModel, onBack: () -> Unit, onMessage: (String) -> U
                 item("h-$label") {
                     com.technewz.app.ui.components.SectionLabel("$label · ${terms.size} term${if (terms.size == 1) "" else "s"}", Modifier.padding(top = 6.dp))
                 }
-                items(terms, key = { it.key }) { t -> TermCard(t, vm.evidence(t), Modifier.animateItem()) }
+                items(terms, key = { it.key }, contentType = { "term" }) { t -> TermCard(t, evidence[t.key].orEmpty(), Modifier.animateItem()) }
             }
         }
     }
@@ -267,6 +276,10 @@ fun TermCard(t: TermEntity, evidence: List<Evidence>, modifier: Modifier = Modif
         Column(Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusPill(t)
+                if (t.checkedAt == 0L) {
+                    Spacer(Modifier.width(6.dp))
+                    Pill("re-checking")
+                }
                 Spacer(Modifier.width(8.dp))
                 val spotted = java.time.Instant.ofEpochMilli(t.discoveredAt).atZone(java.time.ZoneId.systemDefault())
                     .format(java.time.format.DateTimeFormatter.ofPattern("d MMM"))

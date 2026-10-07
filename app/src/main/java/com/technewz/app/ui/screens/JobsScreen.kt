@@ -282,7 +282,7 @@ fun JobsScreen(
                         accent,
                     )
                 }
-                else -> items(ui.jobs, key = { it.id }) { job ->
+                else -> items(ui.jobs, key = { it.id }, contentType = { "job" }) { job ->
                     JobCard(job, tracked = job.id in ui.trackedIds, hasProfile = ui.profile.skills.isNotEmpty(), onClick = { onOpenJob(job.id) }, modifier = Modifier.animateItem())
                 }
             }

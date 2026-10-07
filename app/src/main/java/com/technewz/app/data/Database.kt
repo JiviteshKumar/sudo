@@ -151,7 +151,7 @@ data class TermEntity(
 
 @Dao
 interface TermDao {
-    /** Everything verified, newest first — the radar keeps a 3-month record. */
+    /** Everything ever verified, newest first — the radar keeps its full record. */
     @Query("SELECT * FROM terms WHERE status != 'Rejected' ORDER BY discoveredAt DESC, score DESC")
     fun observeVisible(): Flow<List<TermEntity>>
 
@@ -163,6 +163,13 @@ interface TermDao {
 
     @Query("DELETE FROM terms")
     suspend fun deleteAll()
+
+    /** Rules changed: keep everything visible but queue verified terms for re-verification (checkedAt = 0). */
+    @Query("UPDATE terms SET checkedAt = 0 WHERE status != 'Rejected'")
+    suspend fun markAllForRecheck()
+
+    @Query("DELETE FROM terms WHERE status = 'Rejected' AND checkedAt < :before")
+    suspend fun pruneRejected(before: Long)
 
     @Query("DELETE FROM terms WHERE checkedAt < :before")
     suspend fun prune(before: Long)
