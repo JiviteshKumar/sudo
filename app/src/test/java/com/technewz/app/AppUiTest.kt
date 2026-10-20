@@ -63,8 +63,8 @@ class AppUiTest {
         androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(app)
         db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java).allowMainThreadQueries().build()
         c = AppContainer(app, db)
-        c.settings.update { it.copy(onboarded = true, lastNewsRefresh = now, lastJobsRefresh = now, lastRadarRefresh = now, keywords = emptyList(), radarVersion = com.technewz.app.data.RadarRepository.RULES_VERSION) }
-        c.settings.saveProfile(com.technewz.app.data.Profile())
+        c.settings.update { it.copy(onboarded = true, lastNewsRefresh = now, lastJobsRefresh = now, lastRadarRefresh = now, keywords = emptyList(), radarVersion = com.technewz.app.data.RadarRepository.RULES_VERSION, lastRisingCheck = now, lastRisingScheduled = now) }
+        c.settings.saveProfile(com.technewz.app.data.Profile(skills = listOf("Rust")))
         db.articles().insertAll(
             listOf(
                 article("a1", "Chipmaker unveils 2nm processor", "Gadgets"),
@@ -73,6 +73,8 @@ class AppUiTest {
             )
         )
         db.jobs().upsertAll(listOf(job("j1", "ML Intern, Summer", "Databricks", "Internship", false), job("j2", "Senior Data Engineer", "Stripe", "Full-time", true)))
+        db.rising().upsertAll(listOf(rising("acme/agentkit", "Build AI agents that run anywhere.", isAi = true, rankAll = 0, rankAi = 0),
+            rising("acme/tinydb", "A tiny embedded database written in Rust.", isAi = false, rankAll = 1, rankAi = null)))
         db.trending().upsertAll(listOf(TrendingEntity("papers", "2610.1", 0, "A trending paper", "arXiv 2610.1", "https://huggingface.co/papers/2610.1", "▲ 12", now)))
         db.terms().upsert(
             TermEntity(
@@ -97,6 +99,14 @@ class AppUiTest {
             )
         )
     }
+
+    private fun rising(name: String, description: String, isAi: Boolean, rankAll: Int?, rankAi: Int?) = com.technewz.app.data.RisingRepoEntity(
+        fullName = name, url = "https://github.com/$name", description = description,
+        readme = "$name is the README's first paragraph, quoted.", readmeCheckedAt = now, language = if (isAi) "Python" else "Rust",
+        topics = if (isAi) "llm|agents" else "database", stars = 12_000, forks = 300, createdAt = now - 20 * 86_400_000L, pushedAt = now,
+        weekStars = 4_200, prevStars = null, prevAt = null, growthPerDay = 600.0, growthLabel = "+4.2k stars this week",
+        growthSource = "GitHub Trending", isAi = isAi, rankAll = rankAll, rankAi = rankAi, firstFeaturedAt = now - 86_400_000L, checkedAt = now,
+    )
 
     // The in-memory DB is not closed here: @After runs before the compose rule disposes the UI.
 
@@ -130,6 +140,34 @@ class AppUiTest {
         rule.waitForIdle()
         shown("Ransomware gang hits hospital network")
         gone("Chipmaker unveils 2nm processor")
+    }
+
+    @Test fun risingOnGitHubWithFiltersAndDetails() {
+        start()
+        shown("Rising on GitHub")
+        shown("acme/agentkit")
+        shown("acme/tinydb")
+        // AI/ML shows only repos the app classified as AI/ML; "For you" only those matching the profile (Rust).
+        rule.onNodeWithText("AI/ML").performClick(); rule.waitForIdle()
+        shown("acme/agentkit"); gone("acme/tinydb")
+        rule.onNodeWithText("For you").performClick(); rule.waitForIdle()
+        shown("acme/tinydb"); gone("acme/agentkit")
+        // Tapping a repo shows what it is, what it does (README) and a direct link.
+        rule.onNodeWithText("acme/tinydb").performClick(); rule.waitForIdle()
+        shown("What it does")
+        shown("acme/tinydb is the README's first paragraph, quoted.")
+        rule.onAllNodesWithText("Open on GitHub").onFirst().assertExists()
+    }
+
+    @Test fun aiTabReposTabIsTheRisingAiList() {
+        start()
+        rule.onNodeWithContentDescription("AI & Data").performClick()
+        rule.waitForIdle()
+        shown("Trending now")
+        rule.onNodeWithText("Repos").performClick(); rule.waitForIdle()
+        shown("Rising on GitHub · AI/ML repos gaining stars fastest right now")
+        shown("acme/agentkit")
+        gone("acme/tinydb")
     }
 
     @Test fun aiTabShowsSkillsRadarAndOpensIt() {

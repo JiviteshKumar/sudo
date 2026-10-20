@@ -93,6 +93,7 @@ import com.technewz.app.util.Text
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -142,14 +143,28 @@ class NewsViewModel(private val c: AppContainer, val section: String) : ViewMode
     val trending: StateFlow<List<TrendingEntity>> =
         c.db.trending().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** "Rising on GitHub": the full list in Tech Pulse; its AI/ML list is the Repos tab in AI & Data. */
+    val rising: StateFlow<RisingUi> = combine(
+        c.db.rising().observeListed(),
+        c.settings.settings.map { it.lastRisingCheck to it.lastRisingScheduled }.distinctUntilChanged(),
+        c.settings.profile.map { com.technewz.app.util.Skills.normalize(it.skills) }.distinctUntilChanged(),
+        c.checkingRising,
+    ) { listed, (lastCheck, lastScheduled), skills, checking -> risingUi(listed, skills, lastCheck, lastScheduled, checking) }
+        .flowOn(kotlinx.coroutines.Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RisingUi())
+
     init {
         viewModelScope.launch {
             val s = c.settings.current()
             // The background worker keeps things fresh; only catch up (silently) if it hasn't run lately.
             if (System.currentTimeMillis() - s.lastNewsRefresh > 20 * 60_000) c.refreshNews(userInitiated = false)
             if (section == Section.AI) runCatching { c.news.refreshTrendingIfStale() }
+            // Catches the every-3rd-morning update if the background worker hasn't run it (it checks if it's due).
+            if (section == Section.TECH) c.refreshRising(manual = false)
         }
     }
+
+    fun checkRising(onMessage: (String) -> Unit) = viewModelScope.launch { c.refreshRising(manual = true)?.let(onMessage) }
 
     fun refresh(onMessage: (String) -> Unit) = viewModelScope.launch {
         c.refreshNews()?.let(onMessage)
@@ -190,6 +205,8 @@ fun NewsScreen(
     val ui by vm.state.collectAsState()
     val topic by vm.topic.collectAsState()
     val trending by vm.trending.collectAsState()
+    val rising by vm.rising.collectAsState()
+    var sheetRepo by remember { mutableStateOf<RepoCard?>(null) }
     val context = LocalContext.current
     val isAi = vm.section == Section.AI
     val accent = if (isAi) Accents.ai else Accents.tech
@@ -240,9 +257,13 @@ fun NewsScreen(
             if (isAi && radarVm != null && topic == "All") {
                 item(key = "radar") { RadarBlock(radarVm, onOpenRadar) }
             }
-            if (isAi && trending.isNotEmpty() && topic == "All") {
-                item(key = "trending") { TrendingBlock(trending, accent) { Browser.open(context, it, toolbar) } }
+            if (isAi && (trending.isNotEmpty() || rising.ai.isNotEmpty()) && topic == "All") {
+                item(key = "trending") { TrendingBlock(trending, rising.ai, accent, onOpen = { Browser.open(context, it, toolbar) }, onRepo = { sheetRepo = it }) }
                 item(key = "latest-label") { SectionLabel("Latest from the field") }
+            }
+            if (!isAi && topic == "All") {
+                item(key = "rising") { RisingBlock(rising, accent, onOpen = { sheetRepo = it }, onCheck = { vm.checkRising(onMessage) }) }
+                item(key = "latest-label") { SectionLabel("Latest stories") }
             }
 
             when {
@@ -289,6 +310,9 @@ fun NewsScreen(
 
     sheetCluster?.let { cl ->
         CoverageSheet(cl, onDismiss = { sheetCluster = null }, onOpen = { open(it) })
+    }
+    sheetRepo?.let { card ->
+        RepoSheet(card, accent, onDismiss = { sheetRepo = null }, onOpenGitHub = { Browser.open(context, it, toolbar) })
     }
 }
 
@@ -603,8 +627,9 @@ private fun CoverageSheet(cl: StoryCluster, onDismiss: () -> Unit, onOpen: (Arti
 
 // ---------------- Trending (AI tab) ----------------
 @Composable
-private fun TrendingBlock(items: List<TrendingEntity>, accent: Accent, onOpen: (String) -> Unit) {
-    val kinds = listOf("models" to "Models", "papers" to "Papers", "repos" to "Repos").filter { k -> items.any { it.kind == k.first } }
+private fun TrendingBlock(items: List<TrendingEntity>, repos: List<RepoCard>, accent: Accent, onOpen: (String) -> Unit, onRepo: (RepoCard) -> Unit) {
+    val kinds = listOf("models" to "Models", "papers" to "Papers", "repos" to "Repos")
+        .filter { k -> if (k.first == "repos") repos.isNotEmpty() else items.any { it.kind == k.first } }
     if (kinds.isEmpty()) return
     var kind by rememberSaveable { mutableStateOf(kinds.first().first) }
     Column {
@@ -637,14 +662,14 @@ private fun TrendingBlock(items: List<TrendingEntity>, accent: Accent, onOpen: (
             when (kind) {
                 "models" -> "Hugging Face · ranked by Hugging Face's trending score"
                 "papers" -> "Hugging Face Daily Papers · ranked by upvotes"
-                else -> "GitHub · repos created in the last 30 days, ranked by stars"
+                else -> "Rising on GitHub · AI/ML repos gaining stars fastest right now"
             },
             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
         Spacer(Modifier.height(6.dp))
         Crossfade(kind, label = "trend") { k ->
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (k == "repos") RepoRow(repos, accent, onRepo) else LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(items.filter { it.kind == k }, key = { it.kind + it.id }) { t ->
                     AppCard(Modifier.width(250.dp).height(148.dp), onClick = { onOpen(t.url) }) {
                         Column(Modifier.padding(16.dp)) {

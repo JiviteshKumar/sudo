@@ -103,6 +103,9 @@ class ScreenshotTest {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             NewsHeader("Tech Pulse", Accents.tech, profile, now - 3 * 60_000, 128, false, {}, {})
             ChipRow(Feeds.techTopics, setOf("All"), Accents.tech, {}, counts = mapOf("All" to 128, "AI" to 41, "Security" to 12))
+            com.technewz.app.ui.screens.RisingBlock(
+                com.technewz.app.ui.screens.risingUi(rising, setOf("Rust"), now - 2 * 3_600_000L, now - 2 * 3_600_000L, false), Accents.tech, {}, {},
+            )
             stories.forEach { NewsCard(it, Accents.tech, {}, {}, {}, {}) }
         }
     }
@@ -115,6 +118,21 @@ class ScreenshotTest {
             Spacer(Modifier.height(2.dp))
             jobs.forEach { JobCard(it.toListItem(), tracked = it.id == "j2", hasProfile = true, onClick = {}) }
         }
+    }
+
+    // Copied from a live Rising on GitHub run (testing/RISING_REPORT.md, 20 Oct 2026).
+    private val rising = listOf(
+        Triple("morluto/rea", "Reverse engineer anything with agents, from app behavior down to native binaries.", "+201k stars this week"),
+        Triple("storytold/photocraft", "PhotoCraft: An open-source, photo editor written by scratch in pure Rust.", "+69k stars since it launched 19 days ago"),
+        Triple("debpalash/VoiceStudio", "VoiceStudio is the open-source, fully-local ElevenLabs alternative.", "+17k stars this week"),
+    ).mapIndexed { i, (name, d, g) ->
+        com.technewz.app.data.RisingRepoEntity(
+            fullName = name, url = "https://github.com/$name", description = d, readme = null, readmeCheckedAt = now,
+            language = if (i == 1) "Rust" else "TypeScript", topics = "", stars = listOf(336_176, 71_400, 21_300)[i], forks = 0,
+            createdAt = now - 19 * 86_400_000L, pushedAt = now, weekStars = null, prevStars = null, prevAt = null, growthPerDay = 1.0,
+            growthLabel = g, growthSource = "GitHub Trending", isAi = i != 1, rankAll = i, rankAi = if (i != 1) i else null,
+            firstFeaturedAt = if (i == 2) now - 3_600_000L else now - 5 * 86_400_000L, checkedAt = now,
+        )
     }
 
     // Definition, usage and paper counts are copied from a live audit run (testing/TRUTH_REPORT.md);
@@ -155,6 +173,18 @@ class ScreenshotTest {
         TechNewzTheme(ThemeMode.LIGHT) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 Column(Modifier.padding(top = 24.dp)) { com.technewz.app.ui.screens.TermCard(vla, emptyList()) }
+            }
+        }
+    }
+
+    @Test fun risingLight() = captureRoboImage("build/screens/rising_light.png") {
+        TechNewzTheme(ThemeMode.LIGHT) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                Column(Modifier.padding(top = 24.dp)) {
+                    com.technewz.app.ui.screens.RisingBlock(
+                        com.technewz.app.ui.screens.risingUi(rising, setOf("Rust"), now - 2 * 3_600_000L, now - 2 * 3_600_000L, false), Accents.tech, {}, {},
+                    )
+                }
             }
         }
     }

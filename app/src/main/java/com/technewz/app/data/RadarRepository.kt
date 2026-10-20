@@ -164,8 +164,10 @@ class RadarRepository(
         val news = db.articles().since(now - 90 * day).map {
             TermMiner.Doc(it.id, it.title, it.excerpt.take(1500), it.url, it.source, "news", it.publishedAt)
         }
-        val repos = db.trending().allOnce().filter { it.kind != "models" }.map {
-            TermMiner.Doc(it.kind + it.id, it.title, it.subtitle, it.url, if (it.kind == "repos") "GitHub" else "Hugging Face", if (it.kind == "repos") "repo" else "paper", it.fetchedAt)
+        val repos = db.trending().allOnce().filter { it.kind == "papers" }.map {
+            TermMiner.Doc(it.kind + it.id, it.title, it.subtitle, it.url, "Hugging Face", "paper", it.fetchedAt)
+        } + db.rising().listed().map {
+            TermMiner.Doc("repo:" + it.fullName, it.fullName, (it.description + " " + it.readme.orEmpty()).take(1500), it.url, "GitHub", "repo", it.checkedAt)
         }
         (today + lastThreeMonths).distinctBy { it.url.removeSuffix("/").substringAfterLast("/") } + news + repos
     }

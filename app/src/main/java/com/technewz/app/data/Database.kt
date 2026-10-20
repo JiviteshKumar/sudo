@@ -111,6 +111,37 @@ data class TrendingEntity(
     val fetchedAt: Long,
 )
 
+/**
+ * A repo on "Rising on GitHub". Text is quoted from GitHub (the author's description and the README's first
+ * paragraph); numbers come from GitHub's Trending page and API. [prevStars]/[prevAt] are the previous check,
+ * so growth between updates is measured, not assumed. [rankAll]/[rankAi] are null when not in that list.
+ */
+@Entity(tableName = "rising_repos")
+data class RisingRepoEntity(
+    @PrimaryKey val fullName: String,
+    val url: String,
+    val description: String,
+    val readme: String?,
+    val readmeCheckedAt: Long,
+    val language: String,
+    val topics: String,
+    val stars: Int,
+    val forks: Int,
+    val createdAt: Long,
+    val pushedAt: Long,
+    val weekStars: Int?,
+    val prevStars: Int?,
+    val prevAt: Long?,
+    val growthPerDay: Double,
+    val growthLabel: String,
+    val growthSource: String,
+    val isAi: Boolean,
+    val rankAll: Int?,
+    val rankAi: Int?,
+    val firstFeaturedAt: Long?,
+    val checkedAt: Long,
+)
+
 object TermStatus {
     const val NEW = "New"
     const val RISING = "Rising"
@@ -312,10 +343,29 @@ interface TrendingDao {
     suspend fun upsertAll(items: List<TrendingEntity>)
 }
 
+@Dao
+interface RisingRepoDao {
+    @Query("SELECT * FROM rising_repos WHERE rankAll IS NOT NULL OR rankAi IS NOT NULL")
+    fun observeListed(): Flow<List<RisingRepoEntity>>
+
+    @Query("SELECT * FROM rising_repos WHERE rankAll IS NOT NULL OR rankAi IS NOT NULL")
+    suspend fun listed(): List<RisingRepoEntity>
+
+    @Query("SELECT * FROM rising_repos")
+    suspend fun all(): List<RisingRepoEntity>
+
+    @Upsert
+    suspend fun upsertAll(items: List<RisingRepoEntity>)
+
+    /** Repos no longer listed are kept for a month (their star counts let growth be measured if they return). */
+    @Query("DELETE FROM rising_repos WHERE rankAll IS NULL AND rankAi IS NULL AND checkedAt < :before")
+    suspend fun prune(before: Long)
+}
+
 @Database(
-    entities = [ArticleEntity::class, JobEntity::class, ApplicationEntity::class, TrendingEntity::class, TermEntity::class],
-    version = 1,
-    exportSchema = false,
+    entities = [ArticleEntity::class, JobEntity::class, ApplicationEntity::class, TrendingEntity::class, TermEntity::class, RisingRepoEntity::class],
+    version = 2,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun articles(): ArticleDao
@@ -323,11 +373,26 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun applications(): ApplicationDao
     abstract fun trending(): TrendingDao
     abstract fun terms(): TermDao
+    abstract fun rising(): RisingRepoDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "technewz.db")
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigration()
                 .build()
+    }
+}
+
+/** v1 → v2 adds "Rising on GitHub"; everything already saved (bookmarks, tracker, radar history) is kept. */
+val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `rising_repos` (`fullName` TEXT NOT NULL, `url` TEXT NOT NULL, `description` TEXT NOT NULL, " +
+                "`readme` TEXT, `readmeCheckedAt` INTEGER NOT NULL, `language` TEXT NOT NULL, `topics` TEXT NOT NULL, `stars` INTEGER NOT NULL, " +
+                "`forks` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `pushedAt` INTEGER NOT NULL, `weekStars` INTEGER, `prevStars` INTEGER, " +
+                "`prevAt` INTEGER, `growthPerDay` REAL NOT NULL, `growthLabel` TEXT NOT NULL, `growthSource` TEXT NOT NULL, `isAi` INTEGER NOT NULL, " +
+                "`rankAll` INTEGER, `rankAi` INTEGER, `firstFeaturedAt` INTEGER, `checkedAt` INTEGER NOT NULL, PRIMARY KEY(`fullName`))"
+        )
     }
 }

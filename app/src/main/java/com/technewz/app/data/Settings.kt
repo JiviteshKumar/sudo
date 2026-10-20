@@ -61,6 +61,9 @@ data class AppSettings(
     val lastJobsRefresh: Long = 0,
     val lastRadarRefresh: Long = 0,
     val radarVersion: Int = 0,
+    /** Last time "Rising on GitHub" was checked (any reason), and the last scheduled every-3rd-morning update. */
+    val lastRisingCheck: Long = 0,
+    val lastRisingScheduled: Long = 0,
     val batteryPromptDismissed: Boolean = false,
     val lastError: String = "",
 ) {
@@ -98,6 +101,8 @@ class SettingsRepository(private val context: Context) {
         val lastRadar = longPreferencesKey("last_radar")
         val radarVersion = androidx.datastore.preferences.core.intPreferencesKey("radar_version")
         val batteryPrompt = booleanPreferencesKey("battery_prompt_dismissed")
+        val lastRisingCheck = longPreferencesKey("last_rising_check")
+        val lastRisingScheduled = longPreferencesKey("last_rising_scheduled")
         val lastError = stringPreferencesKey("last_error")
         val profile = stringPreferencesKey("profile")
     }
@@ -134,6 +139,8 @@ class SettingsRepository(private val context: Context) {
             lastJobsRefresh = this[K.lastJobs] ?: 0,
             lastRadarRefresh = this[K.lastRadar] ?: 0,
             radarVersion = this[K.radarVersion] ?: 0,
+            lastRisingCheck = this[K.lastRisingCheck] ?: 0,
+            lastRisingScheduled = this[K.lastRisingScheduled] ?: 0,
             batteryPromptDismissed = this[K.batteryPrompt] ?: false,
             lastError = this[K.lastError] ?: "",
         )
@@ -162,6 +169,8 @@ class SettingsRepository(private val context: Context) {
             prefs[K.lastJobs] = s.lastJobsRefresh
             prefs[K.lastRadar] = s.lastRadarRefresh
             prefs[K.radarVersion] = s.radarVersion
+            prefs[K.lastRisingCheck] = s.lastRisingCheck
+            prefs[K.lastRisingScheduled] = s.lastRisingScheduled
             prefs[K.batteryPrompt] = s.batteryPromptDismissed
             prefs[K.lastError] = s.lastError
         }

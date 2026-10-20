@@ -74,6 +74,7 @@ class LiveTruthTest {
         val nr = c.news.refresh()
         val jr = c.jobs.refresh(force = true)
         c.news.refreshTrendingIfStale(force = true)
+        val rising = c.rising.refresh(scheduled = true)
         val rr = c.radar.refresh(force = true, maxChecks = 15) { println("  radar: $it") }
         val articles = db.articles().all()
         val jobs = db.jobs().all()
@@ -295,6 +296,12 @@ class LiveTruthTest {
         line("- Trending items verified against the live source: $trendOk/${trending.size}")
         line()
 
+        // ------------------------------------------------------------ 6. Rising on GitHub
+        line("## 6. Rising on GitHub: every listed repo checked on GitHub itself")
+        if (rising.limited || rising.unreachable) line("- Not checked: GitHub was ${if (rising.limited) "at its free hourly limit" else "unreachable"} (the app kept its list unchanged)")
+        else RisingAudit.run(db.rising().listed()).let { a -> a.lines.forEach { line(it) }; failures += a.failures.map { "rising $it" } }
+        line()
+
         // ------------------------------------------------------------ verdict
         line("## Verdict")
         if (failures.isEmpty()) line("No fabricated, off-site, misdated or unverifiable-by-design content found.")
@@ -307,6 +314,7 @@ class LiveTruthTest {
         assertTrue("Bad dates found", badDates == 0)
         assertTrue("Headlines don't match live pages often enough", verifiable.isEmpty() || headlineOk >= verifiable.size * 0.9)
         assertTrue("Summaries not verbatim", summaryChecked.isEmpty() || summaryOk + summaryEdited >= summaryChecked.size * 0.95)
+        assertTrue("Rising on GitHub issues: $failures", failures.none { it.startsWith("rising ") })
         assertTrue("Radar issues: $failures", failures.none { it.contains(":") && visible.any { t -> it.startsWith(t.term) } })
     }
 }

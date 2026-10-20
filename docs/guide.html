@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sudo — Engineering Guide</title>
+<style>
+@font-face { font-family: "Inter"; src: url("../app/src/main/res/font/inter_regular.ttf"); font-weight: 400; }
+@font-face { font-family: "Inter"; src: url("../app/src/main/res/font/inter_medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Inter"; src: url("../app/src/main/res/font/inter_semibold.ttf"); font-weight: 600; }
+@font-face { font-family: "Inter"; src: url("../app/src/main/res/font/inter_bold.ttf"); font-weight: 700; }
+@font-face { font-family: "Grotesk"; src: url("../app/src/main/res/font/space_grotesk_medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Grotesk"; src: url("../app/src/main/res/font/space_grotesk_bold.ttf"); font-weight: 700; }
+
+:root {
+  --ink: #0E1220; --muted: #5B6275; --line: #E3E6EE; --soft: #F4F5FA;
+  --indigo: #4F46E5; --cyan: #0891B2; --violet: #A855F7; --pink: #EC4899; --green: #059669; --amber: #B45309;
+}
+@page { size: A4; margin: 18mm 17mm 20mm 17mm;
+  @bottom-left { content: "sudo — Engineering Guide"; font: 500 8pt Inter, sans-serif; color: #9AA1B5; }
+  @bottom-right { content: counter(page); font: 600 8pt Inter, sans-serif; color: #9AA1B5; }
+}
+@page :first { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-family: Inter, sans-serif; font-size: 9.6pt; line-height: 1.55; color: var(--ink); margin: 0; }
+h1, h2, h3 { font-family: Grotesk, sans-serif; letter-spacing: -0.01em; line-height: 1.2; }
+h1 { font-size: 22pt; margin: 9mm 0 4mm; break-after: avoid; color: var(--ink); }
+h1 .num { color: var(--indigo); margin-right: 3mm; }
+h2 { font-size: 13pt; margin: 6mm 0 2mm; color: var(--ink); break-after: avoid; }
+h3 { font-size: 10.5pt; margin: 4mm 0 1.5mm; color: var(--indigo); break-after: avoid; }
+p { margin: 0 0 2.4mm; }
+ul, ol { margin: 0 0 2.6mm; padding-left: 5mm; }
+li { margin: 0 0 1mm; }
+code, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 8.6pt; background: var(--soft); padding: 0.2mm 1.2mm; border-radius: 1.2mm; }
+pre { font-family: Consolas, monospace; font-size: 8.2pt; background: #0E1220; color: #E6E8F0; padding: 3mm 4mm; border-radius: 2.5mm; white-space: pre-wrap; break-inside: avoid; line-height: 1.45; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; font-size: 8.7pt; break-inside: auto; }
+th { text-align: left; font-weight: 600; background: var(--soft); color: var(--ink); }
+th, td { padding: 1.6mm 2.2mm; border-bottom: 0.3mm solid var(--line); vertical-align: top; }
+tr { break-inside: avoid; }
+tr:first-child { break-after: avoid; }
+h2 + table, h3 + table, h2 + p, h3 + p { break-before: avoid; }
+h1.pb { break-before: page; margin-top: 0; }
+.lead { font-size: 10.6pt; color: #2A3045; }
+.box { border: 0.35mm solid var(--line); border-left: 1.2mm solid var(--indigo); background: #FAFAFE; padding: 3mm 4mm; border-radius: 2mm; margin: 3mm 0 4mm; break-inside: avoid; }
+.box.green { border-left-color: var(--green); }
+.box.amber { border-left-color: #F59E0B; background: #FFFBF2; }
+.box.violet { border-left-color: var(--violet); }
+.box b.t { display: block; font-family: Grotesk; font-size: 10pt; margin-bottom: 1mm; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+.card { border: 0.3mm solid var(--line); border-radius: 2.5mm; padding: 3mm 3.5mm; break-inside: avoid; background: #fff; }
+.card h4 { margin: 0 0 1mm; font-family: Grotesk; font-size: 10pt; }
+.pill { display: inline-block; font-size: 7.5pt; font-weight: 600; padding: 0.4mm 2mm; border-radius: 3mm; background: #EEF0FF; color: var(--indigo); margin-right: 1mm; }
+.qa { break-inside: avoid; margin-bottom: 3mm; }
+.qa .q { font-weight: 600; font-family: Grotesk; font-size: 10pt; }
+.qa .a { margin-top: 0.8mm; color: #232838; }
+figure { margin: 3mm 0 4mm; break-inside: avoid; }
+figcaption { font-size: 8pt; color: var(--muted); margin-top: 1mm; }
+.small { font-size: 8.4pt; color: var(--muted); }
+.toc { columns: 2; column-gap: 8mm; font-size: 9.6pt; }
+.toc div { margin-bottom: 1.6mm; break-inside: avoid; }
+.toc b { color: var(--indigo); display: inline-block; width: 7mm; }
+
+/* cover */
+.cover { height: 297mm; width: 210mm; padding: 26mm 22mm; color: #fff; position: relative; overflow: hidden;
+  background: radial-gradient(circle at 18% 22%, #2b2a7a 0, transparent 55%), radial-gradient(circle at 85% 80%, #064e5e 0, transparent 50%), #07080D; }
+.cover .tile { width: 30mm; height: 30mm; border-radius: 9mm; background: linear-gradient(135deg, #6366F1, #06B6D4); display: flex; align-items: center; justify-content: center; }
+.cover h1 { break-before: auto; color: #fff; font-size: 48pt; margin: 14mm 0 2mm; font-family: Consolas, monospace; font-weight: 700; }
+.cover .tag { font-family: Grotesk; font-size: 20pt; color: #8FB4FF; }
+.cover .sub { font-size: 12pt; color: #C9CDE0; margin-top: 8mm; max-width: 150mm; line-height: 1.6; }
+.cover .meta { position: absolute; bottom: 24mm; left: 22mm; right: 22mm; font-size: 9pt; color: #9AA1B5; border-top: 0.3mm solid #2A2F45; padding-top: 4mm; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ COVER -->
+<section class="cover">
+  <div class="tile">
+    <svg width="64" height="64" viewBox="0 0 108 108"><path d="M35,40 L50,54 L35,68" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M57,69 L75,69" stroke="#67E8F9" stroke-width="7" stroke-linecap="round"/></svg>
+  </div>
+  <h1>sudo</h1>
+  <div class="tag">Tech, distilled.</div>
+  <div class="sub">
+    The complete engineering guide to the app: what it does, how every part works, which technologies were
+    used and why, how the on-device ML model was trained, how the Skills Radar verifies new terms, how the app
+    is tested for truthfulness, and the questions you are most likely to be asked about it — with answers.
+  </div>
+  <div class="meta">
+    <span>Android · Kotlin · Jetpack Compose · On-device ML</span>
+    <span>github.com/JiviteshKumar/sudo · October 2026</span>
+  </div>
+</section>
+
+<!-- ============================================================ CONTENTS -->
+<h1 style="break-before: page">Contents</h1>
+<div class="toc">
+  <div><b>1</b> The 60-second pitch</div>
+  <div><b>2</b> What the app does</div>
+  <div><b>3</b> Design principles</div>
+  <div><b>4</b> Tech stack — and why each choice</div>
+  <div><b>5</b> Architecture</div>
+  <div><b>6</b> Data model</div>
+  <div><b>7</b> The news pipeline</div>
+  <div><b>8</b> The jobs pipeline</div>
+  <div><b>9</b> Trending now &amp; Rising on GitHub</div>
+  <div><b>10</b> Skills Radar (term discovery &amp; verification)</div>
+  <div><b>11</b> The on-device summarizer (the ML model)</div>
+  <div><b>12</b> Where LLMs are used (Gemini) — and how they're kept honest</div>
+  <div><b>13</b> Background work, performance &amp; memory</div>
+  <div><b>14</b> Trust &amp; verification</div>
+  <div><b>15</b> Testing strategy</div>
+  <div><b>16</b> Security &amp; privacy</div>
+  <div><b>17</b> Build, release &amp; GitHub</div>
+  <div><b>18</b> Key decisions &amp; trade-offs</div>
+  <div><b>19</b> Bugs found and how they were fixed</div>
+  <div><b>20</b> Limitations &amp; roadmap</div>
+  <div><b>21</b> Interview questions — with answers</div>
+  <div><b>22</b> Glossary</div>
+</div>
+
+<div class="box" style="margin-top:8mm">
+  <b class="t">How to use this guide</b>
+  Read sections 1–3 to explain the product, 4–5 to explain the engineering, and 10–11 for the ML depth an AI
+  engineer will be probed on. Section 19 is your best "tell me about a hard problem" material. Section 21 is a
+  rehearsal sheet. Every number in this guide comes from the code, the training report (<code>ml/REPORT.md</code>)
+  or the live audit (<code>testing/TRUTH_REPORT.md</code>).
+</div>
+
+<!-- ============================================================ 1 -->
+<h1 class="pb"><span class="num">1</span>The 60-second pitch</h1>
+<p class="lead"><b>sudo</b> is an Android app that keeps you current in tech and AI. It pulls news only from
+established outlets and official AI-lab blogs, summarises each story in about 50 words <i>on the phone</i> with
+a small model I trained, tracks new and rising AI/ML/data-science terms (the "Skills Radar"), and lists jobs and
+internships matched against your resume — with a one-tap assisted apply and an application tracker.</p>
+
+<div class="box green">
+<b class="t">What makes it different</b>
+<ul>
+<li><b>It can't make things up.</b> Summaries are the publisher's own sentences, chosen by an on-device model —
+nothing is generated. Every card links to its source.</li>
+<li><b>Nothing is hardcoded.</b> The Skills Radar mines new terms from live research and verifies each one
+against independent sources (OpenAlex publication history + arXiv activity) before showing it.</li>
+<li><b>It proves it.</b> A live "truth audit" test re-checks headlines, links, summaries, job pages, trending
+items and radar terms against the original sources.</li>
+<li><b>No backend.</b> Everything runs on the phone; there is no server to run or pay for.</li>
+</ul>
+</div>
+
+<h2>Numbers worth remembering</h2>
+<table>
+<tr><th>What</th><th>Value</th></tr>
+<tr><td>Code</td><td>~9,000 lines of Kotlin (app) + ~2,000 lines of tests, 43 source files (v1.2.0)</td></tr>
+<tr><td>News sources</td><td>25 curated feeds (10 tech outlets, 15 AI/ML/DS sources incl. arXiv)</td></tr>
+<tr><td>Job sources</td><td>5 job APIs (Adzuna needs a free key) + 18 company career boards (Greenhouse, Lever, Ashby); 1,782 roles in the last audit</td></tr>
+<tr><td>Summarizer model</td><td>20 features → 24 hidden units → 1 output = <b>529 parameters</b>, 12 KB file</td></tr>
+<tr><td>Training data</td><td>4,924 articles after filtering (CNN/DailyMail + articles from the app's own feeds); 3,909 used for training = 115,957 sentences</td></tr>
+<tr><td>Summary quality</td><td>Beats the "first sentences" baseline: ROUGE-1 28.4 vs 27.4 (tech), 33.0 vs 31.6 (CNN)</td></tr>
+<tr><td>APK size</td><td>~3.9 MB (R8-minified release)</td></tr>
+<tr><td>Responsiveness</td><td>992 swipes during a live refresh: median 9 ms, p95 25 ms, max 501 ms (ANR limit 5,000 ms)</td></tr>
+<tr><td>Memory fix</td><td>Radar mining went from +142 MB to +77 MB while handling twice the data</td></tr>
+<tr><td>Audit result (6 Oct 2026)</td><td>80/80 links on publisher sites, 80/80 headlines match the feed, 15/15 checked summaries verbatim, 45/45 trending items exact</td></tr>
+</table>
+
+<!-- ============================================================ 2 -->
+<h1><span class="num">2</span>What the app does</h1>
+<div class="grid2">
+  <div class="card"><h4>⚡ Tech Pulse</h4>Tech news from The Verge, Ars Technica, TechCrunch, Wired, Engadget, BBC,
+  The Register, MIT Technology Review, Rest of World and The Hacker News. Topic chips (AI, Security, Startups,
+  Gadgets…), a hero story, ~50-word summaries, "+N outlets" when several outlets cover the same story.</div>
+  <div class="card"><h4>✦ AI &amp; Data</h4>Official lab blogs (Google AI, Google Research, DeepMind, OpenAI,
+  Hugging Face, NVIDIA, AWS ML, MIT News AI), AI desks (Ars AI, TechCrunch AI, The Decoder), data-science
+  (KDnuggets, Towards Data Science) and arXiv cs.LG / cs.CL. Plus Skills Radar and Trending now.</div>
+  <div class="card"><h4>◎ Skills Radar</h4>A permanent, month-by-month record of new and rising AI/ML/DS terms and
+  tools. Each has a quoted "what it is", "where it's used", the numbers behind it and its sources.</div>
+  <div class="card"><h4>▤ Trending now</h4>Hugging Face trending models, Hugging Face Daily Papers (by upvotes) and
+  rising AI/ML repos on GitHub — straight from their live sources.</div>
+  <div class="card"><h4>🚀 Rising on GitHub</h4>The 15 repos gaining stars fastest, with a direct link, the author's
+  description and a quoted README paragraph. All / AI/ML / For you filters; updates every 3rd morning and keeps the
+  list unchanged when nothing new makes it.</div>
+  <div class="card"><h4>💼 Jobs &amp; Internships</h4>Remote and on-site roles; filters for internships, full-time,
+  remote, on-site, near me and "direct from employer"; a match score and skill gaps computed against your resume;
+  a scam filter.</div>
+  <div class="card"><h4>🚀 Assisted apply + Tracker</h4>Tap-to-copy details, an optional tailored cover letter,
+  opens the employer's real form; you submit. Tracker: Saved → Applied → Interview → Offer / Rejected with a
+  7-day follow-up reminder.</div>
+  <div class="card"><h4>🔔 Alerts &amp; widget</h4>Notifications when a headline or new job mentions your keywords;
+  a home-screen headlines widget (Glance).</div>
+  <div class="card"><h4>🔖 Saved &amp; offline</h4>Bookmarked stories are stored locally and never expire.
+  Launch intro (~2.4 s), light/dark themes, onboarding.</div>
+</div>
+
+<div class="box amber">
+<b class="t">Why "assisted apply" instead of auto-apply</b>
+The original idea was an app that fills and submits applications automatically. That was rejected on purpose:
+LinkedIn/Indeed terms forbid automated applications (accounts get banned), every employer uses a different
+system (Workday, Greenhouse, Lever…) with CAPTCHAs and custom questions — so a bot would fail silently and often.
+Assisted apply keeps the speed (everything ready to paste) while the user stays in control and nothing is sent
+without review.
+</div>
+
+<!-- ============================================================ 3 -->
+<h1><span class="num">3</span>Design principles</h1>
+<ol>
+<li><b>Trust first.</b> Only established sources. Every item shows where it came from and links to the original.
+Undated, future-dated, off-site and promotional items are rejected (Section 14).</li>
+<li><b>Extract, don't generate.</b> The default summaries and all radar explanations are verbatim quotes. Generated
+text (Gemini) is optional, labelled, and must pass a grounding check that rejects any number, name or claim not
+present in the sources.</li>
+<li><b>No hardcoded content.</b> Terms, trends and acronym meanings are learned from live data. What is fixed is the
+<i>list of trusted outlets</i> — deliberately, because it's the trust anchor.</li>
+<li><b>Never guess.</b> If a verification source is unreachable or rate-limited, the radar pauses and says so instead
+of showing unverified results.</li>
+<li><b>On-device and private.</b> No server, no analytics, no account. Keys and your resume stay on the phone.</li>
+<li><b>Honest labels.</b> "AI summary" vs "Key sentences · on-device" vs "Excerpt"; "live on careers page" instead of
+"posted 31 months ago"; "took off in 2024".</li>
+<li><b>Prove it with tests.</b> A live audit checks the app's output against reality, not just that the code runs.</li>
+</ol>
+
+<!-- ============================================================ 4 -->
+<h1 class="pb"><span class="num">4</span>Tech stack — and why each choice</h1>
+<table>
+<tr><th style="width:24%">Layer</th><th style="width:26%">Choice (version)</th><th>Why</th></tr>
+<tr><td>Language</td><td><b>Kotlin</b> 2.1.0, JVM target 17</td><td>Google's preferred Android language; null-safety; coroutines for async; the same code runs in JVM unit tests.</td></tr>
+<tr><td>UI</td><td><b>Jetpack Compose</b> (BOM 2024.12.01), Material 3</td><td>Declarative UI, easy animation (intro, gradients, chips), state-driven lists; the modern Android standard.</td></tr>
+<tr><td>Navigation</td><td>Navigation-Compose 2.8.5</td><td>Single-activity app with type-safe-ish routes (home, job/{id}, radar, profile, settings, onboarding).</td></tr>
+<tr><td>State</td><td>ViewModel + StateFlow (Lifecycle 2.8.7)</td><td>Unidirectional data flow: DB → Flow → ViewModel → UI. Survives rotation.</td></tr>
+<tr><td>Database</td><td><b>Room</b> 2.6.1 (code generated by KSP 2.1.0-1.0.29)</td><td>SQLite with compile-time-checked queries and reactive Flows; offline reading, tracker, radar history.</td></tr>
+<tr><td>Settings</td><td>DataStore Preferences 1.1.1</td><td>Async, transactional replacement for SharedPreferences.</td></tr>
+<tr><td>Background</td><td><b>WorkManager</b> 2.10.0</td><td>The only reliable way to run periodic work on Android (survives reboots, respects Doze). 15 min is Android's minimum period.</td></tr>
+<tr><td>Networking</td><td>OkHttp 4.12.0</td><td>Robust HTTP client: timeouts, redirects, gzip, streaming large responses.</td></tr>
+<tr><td>JSON</td><td>kotlinx.serialization 1.7.3</td><td>Kotlin-native, reflection-free (works with R8); streaming decode for 10–15 MB job-board responses.</td></tr>
+<tr><td>HTML / RSS</td><td>Jsoup 1.18.3 + XmlPullParser</td><td>Jsoup cleans HTML and extracts article text; a custom forgiving RSS/Atom pull parser handles broken feeds.</td></tr>
+<tr><td>Images</td><td>Coil 2.7.0</td><td>Compose-native image loading with memory (capped at 12%) and disk caches.</td></tr>
+<tr><td>Widget</td><td>Glance 1.1.1</td><td>Home-screen widget written in Compose style.</td></tr>
+<tr><td>Browser</td><td>androidx.browser (Custom Tabs)</td><td>Opens articles and job forms in a fast in-app Chrome tab with the user's logins.</td></tr>
+<tr><td>Concurrency</td><td>Kotlin coroutines 1.9.0</td><td>Structured concurrency; parallel fetches with semaphores; a dedicated background-priority dispatcher.</td></tr>
+<tr><td>Build</td><td>Gradle 8.11.1, AGP 8.7.3, R8</td><td>compileSdk/targetSdk 35, minSdk 26 (Android 8.0+). R8 shrinks the release APK to ~3.9 MB.</td></tr>
+<tr><td>Tests</td><td>JUnit 4, Robolectric 4.14.1, Compose UI test, Roborazzi 1.32.2, work-testing</td><td>Run Android/Compose code on the PC (no emulator needed), including screenshots.</td></tr>
+<tr><td>Optional AI</td><td>Gemini REST API (default <code>gemini-2.5-flash-lite</code>)</td><td>Free tier; used only if the user adds a key. Model auto-discovered if the default is retired.</td></tr>
+</table>
+
+<h2>Why native Kotlin and not Flutter / React Native?</h2>
+<p>The app relies heavily on Android-specific capabilities: WorkManager background refresh, battery-optimisation
+exemption, notifications, a home-screen widget, Custom Tabs and a file provider for the resume. Native Kotlin
+gives first-class access to all of them, the best performance for long scrolling lists, and the ability to run
+the exact same parsing/ML code in fast JVM unit tests. The trade-off is no iOS version.</p>
+
+<h2>Why no backend?</h2>
+<p>A server would have to fetch, store and serve content — cost, maintenance and a privacy surface. Every source
+used is public and free, so the phone can fetch directly. The cost of this choice is that each phone does its own
+work (handled by the background worker, memory budget and rate-limit handling described later).</p>
+
+<!-- ============================================================ 5 -->
+<h1><span class="num">5</span>Architecture</h1>
+<figure>
+<svg viewBox="0 0 760 330" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter" font-size="12">
+  <defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#06B6D4"/></linearGradient></defs>
+  <rect x="10" y="10" width="740" height="56" rx="12" fill="#EEF0FF"/>
+  <text x="26" y="34" font-weight="700" font-family="Grotesk" font-size="14">UI — Jetpack Compose</text>
+  <text x="26" y="54" fill="#5B6275">Intro · Onboarding · Tech Pulse · AI &amp; Data · Skills Radar · Jobs · Job detail + Assisted apply · Tracker · Saved · Profile · Settings · Widget</text>
+  <rect x="10" y="80" width="740" height="44" rx="12" fill="#F4F5FA"/>
+  <text x="26" y="107" font-weight="700" font-family="Grotesk" font-size="14">ViewModels</text>
+  <text x="140" y="107" fill="#5B6275">combine Room Flows + settings → immutable UI state (StateFlow), heavy mapping via flowOn(Default)</text>
+  <rect x="10" y="138" width="740" height="44" rx="12" fill="#F4F5FA"/>
+  <text x="26" y="165" font-weight="700" font-family="Grotesk" font-size="14">AppContainer</text>
+  <text x="140" y="165" fill="#5B6275">manual DI: db, settings, ai, news, jobs, radar repositories · refresh state · HeavyWork lock</text>
+  <g>
+    <rect x="10" y="196" width="178" height="62" rx="12" fill="#fff" stroke="#E3E6EE"/>
+    <text x="22" y="220" font-weight="700">NewsRepository</text><text x="22" y="240" fill="#5B6275" font-size="11">feeds → filter → summarise</text>
+    <rect x="198" y="196" width="178" height="62" rx="12" fill="#fff" stroke="#E3E6EE"/>
+    <text x="210" y="220" font-weight="700">JobsRepository</text><text x="210" y="240" fill="#5B6275" font-size="11">APIs → dedupe → score</text>
+    <rect x="386" y="196" width="178" height="62" rx="12" fill="#fff" stroke="#E3E6EE"/>
+    <text x="398" y="220" font-weight="700">RadarRepository</text><text x="398" y="240" fill="#5B6275" font-size="11">mine → verify → explain</text>
+    <rect x="574" y="196" width="176" height="62" rx="12" fill="#fff" stroke="#E3E6EE"/>
+    <text x="586" y="220" font-weight="700">ml/ (on-device)</text><text x="586" y="240" fill="#5B6275" font-size="11">summarizer · TermMiner</text>
+  </g>
+  <rect x="10" y="272" width="360" height="48" rx="12" fill="url(#g1)"/>
+  <text x="26" y="301" fill="#fff" font-weight="700">Room DB (articles · jobs · applications · trending · terms) + DataStore</text>
+  <rect x="384" y="272" width="366" height="48" rx="12" fill="#0E1220"/>
+  <text x="398" y="301" fill="#fff" font-weight="600">net/: OkHttp → feeds, job APIs, arXiv, OpenAlex, Wikipedia, GitHub, PyPI/npm, HF, Gemini</text>
+</svg>
+<figcaption>Layered, single-activity architecture with unidirectional data flow. WorkManager calls the same repositories every 15 minutes.</figcaption>
+</figure>
+
+<h2>Key patterns</h2>
+<ul>
+<li><b>Repository pattern:</b> each feature's data logic (fetch, clean, verify, store) lives in a repository; the UI only observes the database.</li>
+<li><b>Single source of truth:</b> network results are written to Room; screens observe Room Flows. That's why the app shows cached data instantly and works offline.</li>
+<li><b>Manual dependency injection:</b> one <code>AppContainer</code> object builds everything. For an app this size, Hilt/Koin would add complexity without benefit; tests pass an in-memory DB into the container.</li>
+<li><b>Pure, testable core:</b> <code>NewsFilter</code>, <code>RssParser</code>, <code>TermMiner</code>, <code>ExtractiveSummarizer</code>, <code>Skills</code> have no Android dependencies, so they are unit-tested on the JVM.</li>
+</ul>
+
+<h2>Code map</h2>
+<table>
+<tr><th>Package</th><th>Files (lines)</th><th>Responsibility</th></tr>
+<tr><td><code>data/</code></td><td>Database (333), RadarRepository (388), NewsRepository (186), JobsRepository (142), AiFeatures (196), Settings (180), HeavyWork (27)</td><td>Entities, DAOs, repositories, settings, Gemini prompts</td></tr>
+<tr><td><code>ml/</code></td><td>TermMiner (365), Features (125), ExtractiveSummarizer (110), SentenceSplitter (52)</td><td>On-device ML: summariser and term mining</td></tr>
+<tr><td><code>net/</code></td><td>JobSources (368), ResearchSources (293), RssParser (125), Gemini (109), Feeds (75), Http (70), NewsFilter (60), ArticleFetcher (27)</td><td>All network sources and parsing</td></tr>
+<tr><td><code>ui/</code></td><td>NewsScreen (671), JobDetailScreen (611), RadarScreen (409), SettingsScreen (362), JobsScreen (360), Components (359), AppRoot (303), ProfileScreen (272), TrackerScreen (248), OnboardingScreen (224), IntroScreen (162), Theme (154)</td><td>Compose screens, design system</td></tr>
+<tr><td><code>work/</code>, <code>widget/</code>, <code>util/</code></td><td>Notifications (132), Workers (76), HeadlinesWidget (98), Skills (142), Text (128), Browser (43), Battery (27)</td><td>Background jobs, widget, helpers</td></tr>
+</table>
+
+<!-- ============================================================ 6 -->
+<h1><span class="num">6</span>Data model</h1>
+<table>
+<tr><th style="width:18%">Table</th><th>Key fields</th><th style="width:30%">Notes</th></tr>
+<tr><td><code>articles</code></td><td>id (hash of section + canonical URL), url, title, source, section, topic, imageUrl, publishedAt, excerpt, summary, summaryKind (AI / ON_DEVICE / EXCERPT), whyItMatters, clusterId, bookmarked, read</td><td>Pruned after 7 days unless bookmarked</td></tr>
+<tr><td><code>jobs</code></td><td>id (source:externalId), title, company, location, isRemote, employmentType, isInternship, url, source, directFromEmployer, description (≤12k chars), postedAt, fetchedAt, salary, matchScore, matchedSkills, missingSkills, scamFlags, aiAnalysis</td><td>Lists use a light projection (no description) for speed</td></tr>
+<tr><td><code>applications</code></td><td>jobId, title, company, url, status, appliedAt, followUpAt, notes, coverLetter</td><td>Kept separately so pruning jobs never deletes your tracker</td></tr>
+<tr><td><code>trending</code></td><td>kind (models / papers), id, rank, title, subtitle, url, metric, fetchedAt</td><td>Refreshed hourly</td></tr>
+<tr><td><code>rising_repos</code></td><td>fullName, url, description, readme (quoted intro), language, topics, stars, forks, createdAt, pushedAt, weekStars, prevStars + prevAt (previous check), growthPerDay + label + source, isAi, rankAll, rankAi, firstFeaturedAt, checkedAt</td><td>Added in database v2 by a migration; unlisted repos kept 30 days</td></tr>
+<tr><td><code>terms</code></td><td>key, term, shortForm, kind (Concept / Tool), status (New / Rising / Rejected), reason, what + source + URL, usage + source + URL, simpleWhat, papers30, papersPrior, firstSeen, newsMentions, jobMentions, jobCompanies, evidence (JSON), score, checkedAt, discoveredAt</td><td>Verified terms kept permanently; rejected ones forgotten after 30 days</td></tr>
+</table>
+<p class="small">Settings (DataStore) hold API keys, location, keywords, theme, toggles, last-refresh timestamps and the radar
+rules version. The resume PDF is stored in app-private storage (<code>files/resume/</code>).</p>
+
+<!-- ============================================================ 7 -->
+<h1 class="pb"><span class="num">7</span>The news pipeline</h1>
+<figure>
+<svg viewBox="0 0 760 120" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter" font-size="11.5">
+  <g fill="#fff" stroke="#C9CDE0">
+    <rect x="5" y="20" width="110" height="72" rx="10"/><rect x="130" y="20" width="110" height="72" rx="10"/>
+    <rect x="255" y="20" width="110" height="72" rx="10"/><rect x="380" y="20" width="110" height="72" rx="10"/>
+    <rect x="505" y="20" width="110" height="72" rx="10"/><rect x="630" y="20" width="125" height="72" rx="10"/>
+  </g>
+  <g font-weight="700"><text x="16" y="44">1 Fetch</text><text x="141" y="44">2 Filter</text><text x="266" y="44">3 Dedupe</text><text x="391" y="44">4 Enrich</text><text x="516" y="44">5 Summarise</text><text x="641" y="44">6 Cluster+store</text></g>
+  <g fill="#5B6275" font-size="10.5">
+    <text x="16" y="62">25 feeds, 8 at</text><text x="16" y="76">a time</text>
+    <text x="141" y="62">dates, site,</text><text x="141" y="76">promos</text>
+    <text x="266" y="62">canonical URL</text><text x="266" y="76">hash</text>
+    <text x="391" y="62">page text +</text><text x="391" y="76">image (Jsoup)</text>
+    <text x="516" y="62">on-device</text><text x="516" y="76">model</text>
+    <text x="641" y="62">"+N outlets",</text><text x="641" y="76">alerts, prune</text>
+  </g>
+  <g stroke="#6366F1" stroke-width="2"><line x1="115" y1="56" x2="130" y2="56"/><line x1="240" y1="56" x2="255" y2="56"/><line x1="365" y1="56" x2="380" y2="56"/><line x1="490" y1="56" x2="505" y2="56"/><line x1="615" y1="56" x2="630" y2="56"/></g>
+</svg>
+</figure>
+<ol>
+<li><b>Fetch.</b> All 25 feeds are downloaded in parallel (a semaphore limits it to 8 at once). A failing feed never blocks the others.</li>
+<li><b>Filter</b> (<code>NewsFilter.reject</code>): an item must have a real publish date, no more than 2 hours in the future (clock-skew tolerance) and not older than 72 hours; must link to the <i>same publisher</i> as the feed (compared by "brand", e.g. <code>bbc</code> for bbc.com and bbc.co.uk, also accepting the site the feed declares in its own <code>&lt;link&gt;</code>); must be http(s); must have a headline; must not be commerce (promo codes, coupons, deals, ticket and event promos).</li>
+<li><b>Dedupe.</b> ID = a SHA-1 hash (first 20 hex characters) of section + canonical URL (tracking parameters like <code>utm_</code> removed). The same story can exist in both Tech and AI tabs.</li>
+<li><b>Enrich.</b> Of the 80 newest new items, the first 40 whose feed text is short (&lt;400 chars) or that have no image get their article page fetched (6 at a time; arXiv is skipped) and Jsoup extracts the body paragraphs and the <code>og:image</code>.</li>
+<li><b>Summarise.</b> The on-device extractive model picks the key sentences (Section 11). If the text is too thin, the publisher's excerpt is shown, labelled "Excerpt". If the user enabled Gemini, up to 20 recent items per refresh are rewritten in batches of 10 and labelled "AI summary".</li>
+<li><b>Cluster.</b> Headlines are tokenised; two stories in the same section within 48 h are the same story if Jaccard ≥ 0.45, or ≥4 shared words with ≥60% overlap. arXiv papers only merge on identical titles (different papers often share vocabulary).</li>
+<li><b>Store &amp; alert.</b> Inserted into Room; keyword alerts sent (never on the very first sync); stories older than 7 days are pruned unless bookmarked.</li>
+</ol>
+<p><b>Topics</b> (AI, Security, Startups, …) come from keyword rules, optionally overridden by Gemini. <b>Clustering</b>
+is a trust feature: "covered by 4 outlets" is a signal that a story is real.</p>
+
+<!-- ============================================================ 8 -->
+<h1><span class="num">8</span>The jobs pipeline</h1>
+<table>
+<tr><th>Source</th><th>Type</th><th>Notes</th></tr>
+<tr><td>Remotive</td><td>Job site API</td><td>Remote; software-dev, data and devops categories</td></tr>
+<tr><td>Remote OK</td><td>Job site API</td><td>Remote; like every source, its name is shown on each card ("via Remote OK")</td></tr>
+<tr><td>The Muse</td><td>Job site API</td><td>Software engineering, data science, internships</td></tr>
+<tr><td>Arbeitnow</td><td>Job site API</td><td>Europe-heavy</td></tr>
+<tr><td>Adzuna</td><td>Job site API (optional free key)</td><td>Best for on-site jobs near you; 19 countries including India</td></tr>
+<tr><td>Greenhouse, Lever, Ashby</td><td>Company career boards</td><td>Direct from employer: Anthropic, Databricks, Stripe, Figma, Airbnb, Discord, Cloudflare, Scale AI, GitLab, MongoDB, Dropbox, Pinterest, Palantir, Spotify, OpenAI, Notion, Linear, Ramp (editable)</td></tr>
+</table>
+<ul>
+<li><b>Tech-role filter:</b> "strong" title words (engineer, developer, scientist, data, ML…) always qualify; "weak" ones (AI, research, analyst…) only if the title isn't clearly non-tech (sales, recruiter, marketing…).</li>
+<li><b>Dedupe:</b> same title + company + location across sources → the employer's own posting wins.</li>
+<li><b>Freshness:</b> job-site listings older than 45 days are dropped; employer-board listings are kept while the company still lists them (labelled "live on careers page"); at most 120 tech roles are taken per company board. Listings not seen at their source for 3 days are deleted.</li>
+<li><b>Large responses:</b> some boards return 10–15 MB of JSON (OpenAI's ~14.6 MB). They are decoded straight from the network stream into small typed models (kotlinx.serialization <code>decodeFromStream</code>) instead of building a full JSON tree, to stay within phone memory.</li>
+<li><b>Sync cadence:</b> at most hourly (the 15-minute worker skips jobs if the last sync was &lt;55 min ago); pull-to-refresh forces it.</li>
+</ul>
+<h2>Match score and skill gaps</h2>
+<p>A fixed vocabulary of 82 canonical skills with aliases (e.g. <i>k8s → Kubernetes</i>, <i>sklearn → scikit-learn</i>)
+is matched with word-boundary regexes against the job text and the user's skills.
+<b>Score = matched ÷ min(required, 10) × 100.</b> The cap of 10 stops long "nice to have" lists from punishing
+everyone. It's deterministic and explainable — you can always see which skills matched and which are missing.
+Missing skills link to a YouTube course search. An optional Gemini "deep analysis" gives a fit score, strengths, gaps
+and eligibility notes from the full resume.</p>
+<h2>Scam filter</h2>
+<p>Regex red flags: asks for a fee or deposit, contact via WhatsApp/Telegram, "no interview", too-good pay claims,
+asks for ID/bank details, CV to a personal Gmail. One flag shows a warning; two or more hide the listing.</p>
+<h2>Assisted apply</h2>
+<p>The sheet has four steps: copy your details (name, email, phone, links); generate a cover letter and three
+answers (Gemini, instructed to use only resume facts); resume reminder and share button; open the employer's
+page. When you return, the app asks "Did you submit it?" — yes moves it to Applied and schedules a 7-day
+follow-up reminder through WorkManager.</p>
+
+<!-- ============================================================ 9 -->
+<h1><span class="num">9</span>Trending now &amp; Rising on GitHub</h1>
+<h2>Trending now (AI &amp; Data tab)</h2>
+<table>
+<tr><th>Tab</th><th>Live source</th><th>Ranking</th></tr>
+<tr><td>Models</td><td><code>huggingface.co/api/models?sort=trendingScore</code></td><td>Hugging Face's own trending score</td></tr>
+<tr><td>Papers</td><td><code>huggingface.co/api/daily_papers</code></td><td>Upvotes</td></tr>
+<tr><td>Repos</td><td>The AI/ML list of Rising on GitHub (below)</td><td>Stars gained recently</td></tr>
+</table>
+<p>Nothing is hardcoded: the Hugging Face lists are fetched hourly and each tab's caption states its source and
+ranking. The Repos tab used to list new AI repos by total stars; it was replaced by Rising on GitHub's AI/ML list,
+which also catches older repos that suddenly take off.</p>
+
+<h2>Rising on GitHub (Tech Pulse tab, added in v1.2.0)</h2>
+<p>The 15 repos gaining stars fastest right now, with a direct link, the author's own description ("What it is") and
+the first paragraph of the README, quoted ("What it does"). Filters: <b>All</b>, <b>AI/ML</b> and <b>For you</b>.</p>
+<table>
+<tr><th style="width:24%">Step</th><th>How it works</th></tr>
+<tr><td>Discover</td><td>GitHub's Trending page (weekly), which shows each repo's "N stars this week", plus four GitHub
+searches for repos launched in the last 45 days (all of GitHub, and the <code>llm</code>, <code>ai-agents</code> and
+<code>machine-learning</code> topics). GitHub has no official API for Trending, so the page is parsed; if it changes,
+the searches still work.</td></tr>
+<tr><td>Confirm</td><td>Every Trending repo is looked up in GitHub's public API (no key needed). Left out: archived
+repos, forks, repos with no description, repos not pushed to in 30 days.</td></tr>
+<tr><td>Measure growth</td><td>Stars per day from the strongest evidence: Trending's weekly count; otherwise the gain
+sudo measured between two of its own checks (≥20 h apart); otherwise, for a repo under 45 days old, its average
+since launch. Every card says which source its number came from. A repo with no evidence of growth is never listed.</td></tr>
+<tr><td>Keep or renew</td><td>The top 15 by growth replace the list only if that is a different set of repos.
+Same repos → the list stays exactly as it was (no reshuffling). New entries get a "New" badge.</td></tr>
+<tr><td>Schedule</td><td>Every 3rd morning: due 3 days after the last scheduled update (minus 4 h slack) between 6 am and
+noon local time, or after 4 days at any time if every morning was missed. The 15-minute worker checks whether it's
+due; opening Tech Pulse does too. A manual "Check now" is allowed once an hour and doesn't move the schedule.</td></tr>
+<tr><td>AI/ML filter</td><td>The repo's own topics (e.g. <code>llm</code>, <code>ai-agents</code>, <code>pytorch</code>)
+or its own description (AI, LLM, agents, Claude, diffusion…; "user agent" is excluded).</td></tr>
+<tr><td>For you</td><td>Repos whose name, description, README quote, language or topics mention a skill from your
+profile, using the same 82-skill matcher as jobs.</td></tr>
+<tr><td>Budget</td><td>GitHub allows 60 API requests an hour per network without a token. A first update used 14
+(measured on 20 Oct 2026); later ones also re-check listed repos, so up to about 40. README text comes from
+<code>raw.githubusercontent.com</code>, which isn't counted. If the limit or an outage
+is hit, the list is kept unchanged and checked again later; nothing is guessed.</td></tr>
+</table>
+<div class="box amber"><b class="t">A trust decision worth knowing: no "fake stars" flag</b>
+Star counts can be bought, so I planned to flag repos with many stars but few watchers. Before building it I measured
+12 of the most-starred repos created in the past year: every one, including well-known legitimate projects, had
+watchers at only 0.2–1% of stars. The signal can't tell viral from fake, so the app shows the facts instead (stars,
+forks, created date, last update) plus a note that stars measure popularity, not quality or safety.</div>
+<p>Data is stored in the <code>rising_repos</code> table (added by a database migration from version 1 to 2, so updating
+the app keeps bookmarks, the tracker and radar history). Repos that leave the list are kept for 30 days so their
+growth can be measured if they come back.</p>
+
+<!-- ============================================================ 10 -->
+<h1><span class="num">10</span>Skills Radar — term discovery &amp; verification</h1>
+<p class="lead">The most "AI-engineer" part of the app: an automatic system that finds newly emerging AI/ML/DS terms
+in live research text, decides whether they are genuinely new and growing using independent data, and explains
+each one using only quoted sources.</p>
+
+<figure>
+<svg viewBox="0 0 760 150" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter" font-size="11.5">
+  <defs><linearGradient id="g2" x1="0" x2="1"><stop offset="0" stop-color="#A855F7"/><stop offset="1" stop-color="#EC4899"/></linearGradient></defs>
+  <rect x="5" y="10" width="235" height="130" rx="12" fill="#F7F0FF"/>
+  <text x="18" y="34" font-weight="700" font-family="Grotesk" font-size="14" fill="#7E22CE">1 · DISCOVER</text>
+  <text x="18" y="56" fill="#333">Corpus: today's arXiv + 3-month</text>
+  <text x="18" y="72" fill="#333">sample + news + repos</text>
+  <text x="18" y="92" fill="#333">Acronym definitions (Schwartz–Hearst)</text>
+  <text x="18" y="108" fill="#333">+ title phrases</text>
+  <text x="18" y="128" fill="#333">Keep if ≥3× more common than baseline</text>
+  <rect x="262" y="10" width="235" height="130" rx="12" fill="#EEF0FF"/>
+  <text x="275" y="34" font-weight="700" font-family="Grotesk" font-size="14" fill="#4F46E5">2 · VERIFY</text>
+  <text x="275" y="56" fill="#333">OpenAlex: took off ≤3 years ago,</text>
+  <text x="275" y="72" fill="#333">no real presence 5–10 years ago</text>
+  <text x="275" y="92" fill="#333">arXiv: ≥5 papers in last 30 days</text>
+  <text x="275" y="112" fill="#333">Still growing (year pace or</text>
+  <text x="275" y="128" fill="#333">30-day vs prior 150-day rate)</text>
+  <rect x="519" y="10" width="236" height="130" rx="12" fill="#ECFDF5"/>
+  <text x="532" y="34" font-weight="700" font-family="Grotesk" font-size="14" fill="#047857">3 · EXPLAIN &amp; KEEP</text>
+  <text x="532" y="56" fill="#333">Definition: Wikipedia or the</text>
+  <text x="532" y="72" fill="#333">plainest verbatim abstract sentence</text>
+  <text x="532" y="92" fill="#333">Usage sentence + sources + numbers</text>
+  <text x="532" y="112" fill="#333">Stored permanently, grouped by</text>
+  <text x="532" y="128" fill="#333">month "first spotted"</text>
+</svg>
+</figure>
+
+<h2>1. Discovery (no hardcoded terms)</h2>
+<ul>
+<li><b>Recent corpus:</b> today's arXiv listings (cs.AI, cs.LG, cs.CL, cs.CV, stat.ML), a sample of AI/ML papers from the last 3 months (7 two-week windows × 120, via OpenAlex), news from the last 90 days, Hugging Face papers and GitHub repos. Job ads are excluded from mining (they're full of HR acronyms) and only counted later.</li>
+<li><b>Acronyms are learned from text</b> with the <b>Schwartz &amp; Hearst (2003)</b> abbreviation algorithm: find "long form (SF)" patterns and match the short form's letters backwards through the preceding words. E.g. "Cache-Augmented Generation (CAG)" → CAG; it correctly ignores "2024 (USA)".</li>
+<li><b>Phrases:</b> 2–3-word title n-grams appearing in ≥4 documents.</li>
+<li><b>Novelty ("lift"):</b> rate in the recent corpus ÷ rate in a <b>baseline</b> of AI/ML papers from 6–18 months ago (6 windows × 200, via OpenAlex) plus older AI-blog posts. Only terms ≥3× more common now go forward. Both corpora count the term the same way (long form <i>or</i> acronym) — an early bug made "API" look new because the baseline only counted the long form.</li>
+<li><b>Spelling variants</b> with the same acronym (e.g. "RL with verifiable rewards" / "reinforcement learning with verifiable rewards") are merged, and the one the literature uses most is verified.</li>
+</ul>
+
+<h2>2. Verification (independent data)</h2>
+<div class="box violet">
+<b class="t">The "took off" rule (OpenAlex publication history)</b>
+For each term, OpenAlex returns the number of scholarly works per year containing the exact phrase.<br>
+<b>baseline</b> = median count of the years Y−10 … Y−5. If baseline &gt; 30 works/yr, or &gt; 2% of today's volume → <b>established</b> (rejected).<br>
+<b>threshold</b> = max(10, 5 × baseline). <b>Took off</b> = first year whose count ≥ threshold.<br>
+Accepted only if it took off in the last 3 years. <b>New</b> = took off this year or last; otherwise <b>Rising</b>.
+</div>
+<table>
+<tr><th>Term (real OpenAlex data)</th><th>History</th><th>Result</th></tr>
+<tr><td>software development kit</td><td>101–152 works every year from 2015 to 2026</td><td>Established → rejected</td></tr>
+<tr><td>differential privacy</td><td>median 737/yr in 2016–2021</td><td>Established → rejected</td></tr>
+<tr><td>world models</td><td>median 296/yr then a boom</td><td>Established → rejected</td></tr>
+<tr><td>vision-language-action</td><td>2022: 1, 2023: 9, 2024: 63, 2025: 590, 2026: 2,395</td><td>Took off 2024 → Rising</td></tr>
+<tr><td>flow matching</td><td>13–26 a year in 2015–2022, then 69 → 315 → 1,023 → 3,038</td><td>Took off 2024 → Rising (measured against its own past level)</td></tr>
+<tr><td>on-policy self-distillation</td><td>2026: 208, nothing before</td><td>New</td></tr>
+<tr><td>forward deployed engineer</td><td>8 works in total</td><td>Too little evidence → rejected</td></tr>
+</table>
+<ul>
+<li><b>Active now:</b> ≥5 arXiv papers in the last 30 days (arXiv's own API, AI/ML categories; OpenAlex fallback).</li>
+<li><b>Still growing:</b> this year's annualised pace ≥ last year, or the 30-day rate ≥ 1.2× the prior 150-day rate.</li>
+<li><b>Tools from job posts</b> (e.g. LangGraph): mixed-case product names asked for by ≥3 employers, confirmed by <b>two registries agreeing</b> — a GitHub repo of that exact name with ≥1,000 stars <i>and</i> a PyPI or npm package of the same name that links back to that repo. "New" = first released under 2 years ago; otherwise the tool must be rising in job posts (share of the last 45 days ≥1.5× the older share). (Exact-name matching alone once matched "SaaS" to an unrelated repo.)</li>
+</ul>
+
+<h2>3. Explanation (quoted, never invented)</h2>
+<ul>
+<li><b>What it is:</b> the Wikipedia summary if a page whose title contains the term exists (via Wikipedia search); otherwise the best definitional sentence from recent abstracts. Sentences where the term is the subject ("X is…", "X refers to…", "X, a …") score highest; papers describing their own system ("we propose…") are penalised; a readability score prefers plainer wording.</li>
+<li><b>Where it's used:</b> a sentence with an application cue ("used in", "applied to", "enables"…), excluding results sentences full of numbers and self-descriptions; an acronym glued into another name (VR-JEPA) doesn't count as the term.</li>
+<li><b>Sources:</b> the OpenAlex history link, recent arXiv papers, news, repos and job posts — top 3 shown on each card.</li>
+<li><b>Optional plain-English rewrite</b> by Gemini, kept only if it passes the grounding check (Section 12).</li>
+</ul>
+
+<h2>Persistence, budgets and "never guess"</h2>
+<ul>
+<li>Verified terms are stored permanently and shown instantly on launch; a background scan looks for new ones at most every 3 hours. Verified terms are re-checked every 3 days, rejected ones every 10 days; rejected ones are forgotten after 30 days.</li>
+<li>When rules change, nothing is wiped: terms are labelled "re-checking", re-verified first, and removed only if they fail.</li>
+<li>Without a key, OpenAlex gives a small daily budget shared per network IP (in testing, roughly 100 searches a day). The radar screens at most 20 new candidates per scan (plus pending re-checks) and spends at most 12 arXiv checks, supports an optional free personal key, and if OpenAlex's budget runs out it <b>pauses and says so</b> instead of guessing. arXiv calls are retried with backoff and fall back to OpenAlex.</li>
+<li>A quality gate refuses to mine unless the baseline has ≥500 and the recent corpus ≥300 real arXiv papers (otherwise textbook terms look "new"); if not, it pauses and retries in ~3 hours.</li>
+</ul>
+
+<!-- ============================================================ 11 -->
+<h1 class="pb"><span class="num">11</span>The on-device summarizer (the ML model)</h1>
+<h2>Problem framing</h2>
+<p>Summaries must be ~50 words and must never contain false facts. Abstractive models (that write new text)
+hallucinate; small ones more so. So the task was framed as <b>extractive summarization</b>: score every sentence
+of the article and show the top sentences, verbatim, in original order. Faithfulness is guaranteed by
+construction — the model can only <i>choose</i> publisher sentences.</p>
+
+<h2>Model</h2>
+<table>
+<tr><th>Item</th><th>Value</th></tr>
+<tr><td>Type</td><td>Binary sentence scorer: small multilayer perceptron (MLP)</td></tr>
+<tr><td>Architecture</td><td>20 standardised features → 24 tanh hidden units → 1 sigmoid output</td></tr>
+<tr><td>Parameters</td><td>20×24 + 24 + 24 + 1 = <b>529</b> (12 KB JSON in <code>assets/</code>)</td></tr>
+<tr><td>Inference</td><td>Pure Kotlin, milliseconds per article, no ML runtime needed</td></tr>
+<tr><td>Selection</td><td>Greedy by score up to ~50 words (max 60), max 3 sentences, trigram blocking to avoid repetition</td></tr>
+</table>
+<h3>The 20 features (same code in training and on the phone — no train/serve skew)</h3>
+<p>relative position · is first · is second · 1/(position+1) · length · too short · too long · title overlap ·
+similarity to the document centroid · TextRank score · ratio of numbers · ratio of capitalised words (names) ·
+contains a quote · starts with a dangling pronoun/connective ("He", "However") · is a question · stop-word ratio ·
+attribution ("said", "according to") · boilerplate (newsletter, cookie, image credit…) · document length ·
+similarity to the lead sentence.</p>
+
+<h2>Training</h2>
+<table>
+<tr><th>Item</th><th>Value</th></tr>
+<tr><td>Data</td><td><b>CNN/DailyMail 3.0.0</b> (CNN stories only, journalist-written highlights): 4,730 kept → 3,789 train / 489 val / 452 test. <b>Tech articles from the app's own feeds</b> with the publisher's own summary line ("dek") as reference: 194 kept → 120 / 41 / 33.</td></tr>
+<tr><td>Labels</td><td>"Oracle" extraction: greedily pick 1–3 sentences maximising ROUGE-1 + ROUGE-2 F1 against the reference; those are positives. 115,957 training sentences, 9,177 positive (~8%).</td></tr>
+<tr><td>Quality filters</td><td>Drop truncated/out-of-range deks, paywalled or thin pages, references not supported by the text (unigram recall &lt;35%), deks that just copy the first sentence (36 dropped), duplicates. Deterministic hash-based splits — test articles never trained on.</td></tr>
+<tr><td>Optimiser</td><td>Adam (β1 0.9, β2 0.999), lr 0.002 for 8 epochs then 0.0007, 24 epochs, batch 128, L2 1e-4, seed 42</td></tr>
+<tr><td>Imbalance</td><td>Positive weight ≈5.8×; tech examples weighted 4× (domain adaptation)</td></tr>
+<tr><td>Model selection</td><td>Best epoch on validation (CNN val + 2× tech val); a position prior was tuned on validation (best = 0)</td></tr>
+<tr><td>Hardware</td><td>CPU, under a minute (the RTX 3050 wasn't needed)</td></tr>
+</table>
+<h2>Results (held-out test sets, ROUGE F1 × 100, 50-word budget)</h2>
+<table>
+<tr><th>Method</th><th>Tech R-1</th><th>Tech R-2</th><th>Tech R-L</th><th>CNN R-1</th><th>CNN R-2</th><th>CNN R-L</th></tr>
+<tr><td>Lead (first sentences)</td><td>27.4</td><td>11.1</td><td>20.6</td><td>31.6</td><td>11.6</td><td>21.0</td></tr>
+<tr><td>TextRank</td><td>24.9</td><td>7.7</td><td>17.8</td><td>29.5</td><td>9.0</td><td>19.2</td></tr>
+<tr><td><b>sudo model</b></td><td><b>28.4</b></td><td><b>11.8</b></td><td><b>21.1</b></td><td><b>33.0</b></td><td><b>12.6</b></td><td><b>22.0</b></td></tr>
+<tr><td>Oracle (ceiling)</td><td>38.4</td><td>21.0</td><td>29.8</td><td>45.4</td><td>24.2</td><td>32.8</td></tr>
+</table>
+<p>Lead is famously hard to beat in news (journalists put key facts first). Honest caveat: the tech test set is
+small (33 articles), so treat that row as encouraging, not conclusive. More tech data accumulates with each retrain.</p>
+<div class="box"><b class="t">Why so small a model?</b>
+Choosing sentences is far easier than writing text; 116k examples would be memorised by a big model; it must run
+in milliseconds in the background on a phone; and every decision is explainable through 20 human-readable
+features. A fine-tuned abstractive model (e.g. Gemma 3 270M with LoRA) was considered and rejected for the
+default path because it would be ~500,000× larger and less faithful.</div>
+
+<!-- ============================================================ 12 -->
+<h1><span class="num">12</span>Where LLMs are used (Gemini) — and how they're kept honest</h1>
+<p>All LLM features are optional (the user supplies a free Gemini key) and the app works fully without them.</p>
+<table>
+<tr><th>Feature</th><th>Prompt constraint</th><th>Safeguard</th></tr>
+<tr><td>Rewritten summaries + "why it matters"</td><td>"Use ONLY the supplied text; no fact, number, name or claim not in it"; JSON output</td><td>IDs validated; length checked; labelled "AI summary"; off by default</td></tr>
+<tr><td>Resume parsing (PDF sent as inline data)</td><td>"Use only what is written; leave fields empty if absent"</td><td>User reviews every field before saving</td></tr>
+<tr><td>Match analysis</td><td>Honest coach; no invented requirements</td><td>Labelled "AI analysis"; local score still shown</td></tr>
+<tr><td>Cover letter + answers</td><td>Only resume facts; don't claim missing skills</td><td>Editable; user submits</td></tr>
+<tr><td>Radar plain-English rewrite</td><td>Only facts from the sources</td><td><b>Grounding check</b>, else the verbatim quote is shown</td></tr>
+</table>
+<h2>The grounding check (<code>TermMiner.grounded</code>)</h2>
+<p>For every generated sentence: at least 70% of its content words (lightly stemmed) must appear in the sources,
+<b>every number</b> must appear verbatim, and <b>every capitalised name</b> must appear verbatim. Anything else is
+rejected. Unit tests prove it rejects an invented "40 times faster", an invented "invented at Microsoft" and an
+unsupported claim about hospitals.</p>
+<p><b>Model handling:</b> default <code>gemini-2.5-flash-lite</code> (free tier, cheap); if the model is retired
+(HTTP 404) the client lists available models and switches to the newest stable Flash-Lite model (or the newest Flash model); rate limits (429)
+pause AI features until the next refresh with a clear message.</p>
+
+<!-- ============================================================ 13 -->
+<h1><span class="num">13</span>Background work, performance &amp; memory</h1>
+<h2>Refresh schedule</h2>
+<ul>
+<li>A <b>WorkManager periodic job every 15 minutes</b> (Android's minimum) when online: news every run, jobs at most hourly, radar at most every 3 hours. Android may delay it in Doze; a banner (and Settings) offers to allow unrestricted battery use so it keeps running.</li>
+<li>Opening the app <b>doesn't trigger a visible refresh</b>: cached data shows instantly; a silent catch-up runs only if the worker hasn't refreshed in 20 minutes. The pull-to-refresh spinner appears only when the user pulls.</li>
+</ul>
+<h2>Three production problems and their fixes</h2>
+<div class="grid2">
+<div class="card"><h4>1 · "isn't responding" (ANR)</h4>Feed parsing, job parsing and term mining ran on the UI thread.
+<b>Fix:</b> all heavy work moved off the main thread; list filtering/clustering via <code>flowOn(Default)</code>;
+jobs list uses a light projection (it was loading ~9 MB of descriptions on every change).</div>
+<div class="card"><h4>2 · App killed while scrolling (OOM)</h4>Reproduced with a 256 MB heap: radar mining used
+<b>+142 MB</b>. <b>Fix:</b> don't mine job ads; index only acronym-like tokens; int-array postings; trimmed job
+text loaded via SQL <code>substr</code>; image cache capped at 12%. Now <b>+77 MB with twice the data</b>.</div>
+<div class="card"><h4>3 · CPU contention</h4>News, jobs and radar all started at launch. <b>Fix:</b>
+<code>HeavyWork</code>: two dedicated threads at Android <i>background</i> priority (the scheduler always prefers the
+UI thread) + a mutex so memory-heavy phases run one at a time.</div>
+<div class="card"><h4>Proof</h4>A live test swipes the real feed while a real refresh runs: <b>992 swipes, median
+9 ms, p95 25 ms, max 501 ms</b> (ANR threshold 5,000 ms). A crash recorder saves any crash so it can be copied from
+Settings.</div>
+</div>
+<h2>Other optimisations</h2>
+<ul>
+<li>Streaming JSON decode for huge job boards; cheap tag-stripping instead of an HTML parser per RSS item.</li>
+<li>The app root redraws only when theme/onboarding change, not on every settings write.</li>
+<li>Lazy-list <code>contentType</code> hints for efficient recycling; radar sources decoded in the background.</li>
+<li>arXiv requests are serialised at 1 per 3 s (arXiv's policy) with exponential backoff on failures.</li>
+</ul>
+
+<!-- ============================================================ 14 -->
+<h1><span class="num">14</span>Trust &amp; verification</h1>
+<h2>Rules every news item must pass</h2>
+<table>
+<tr><th>Rule</th><th>Why</th></tr>
+<tr><td>Must have a publish date; not in the future; not older than 72 h</td><td>Undated items can't honestly be called "latest"</td></tr>
+<tr><td>Link must belong to the feed's publisher (brand match; feed's declared site accepted)</td><td>Blocks injected / off-site links, even from a compromised feed</td></tr>
+<tr><td>http(s) only; headline required</td><td>Blocks <code>javascript:</code> and junk</td></tr>
+<tr><td>No commerce: promo codes, coupons, deals, ticket/event promos</td><td>Not news</td></tr>
+</table>
+<h2>The live truth audit (<code>LiveTruthTest</code>)</h2>
+<p>Runs the app's real pipelines over the internet, then independently re-checks the output:</p>
+<ul>
+<li>every headline is identical to the publisher's feed; a sample of article pages is opened to confirm the headline (og:title / &lt;title&gt; / h1);</li>
+<li>every link is on the publisher's own site; every date valid;</li>
+<li>every on-device summary sentence appears word-for-word in the publisher's page or feed text (publisher edits after fetch are reported separately);</li>
+<li>a sample of job pages is live and shows the job title (bot-blocked or JavaScript-only pages are reported "unverifiable", never "passed");</li>
+<li>every Trending item matches the live Hugging Face / GitHub API (still listed, counts match, repo created in the last 30 days);</li>
+<li>every Skills Radar term: definition verbatim at its cited source, numbers reproducible, acronym expansion used in papers, and its age confirmed by <b>two independent sources</b> (OpenAlex "took off" and arXiv volume 4–5 years ago).</li>
+</ul>
+<table>
+<tr><th>Latest audit (6 Oct 2026)</th><th>Result</th></tr>
+<tr><td>Links on publisher's own site</td><td>80/80</td></tr>
+<tr><td>Headlines identical to publisher's feed</td><td>80/80</td></tr>
+<tr><td>Headlines matching the live page</td><td>31/31 reachable</td></tr>
+<tr><td>Summaries word-for-word</td><td>15/15</td></tr>
+<tr><td>Job pages live with correct title</td><td>23/23 reachable</td></tr>
+<tr><td>Trending items exact</td><td>45/45</td></tr>
+<tr><td>Skills Radar terms</td><td>Not checked in this run: the research sources were rate-limiting, so the radar had no terms to audit. Re-run it once they're available.</td></tr>
+</table>
+<div class="box amber"><b class="t">What can't be proven (say this honestly)</b>
+Whether a publisher's own reporting is true — the app uses established outlets, shows multi-outlet coverage, and
+never writes news itself, but it can't fact-check journalism. Some pages block automated checks. And a phrase's
+earliest use may have meant something else — which is why the radar measures when a term <i>took off</i>, not when
+it first appeared.</div>
+
+<!-- ============================================================ 15 -->
+<h1 class="pb"><span class="num">15</span>Testing strategy</h1>
+<table>
+<tr><th>Suite</th><th>Kind</th><th>What it proves</th></tr>
+<tr><td><code>TrustRulesTest</code> (14)</td><td>Unit, offline</td><td>Fake/off-site/undated/future/promo items rejected; RSS/Atom/broken-feed parsing; acronym learning; new terms outrank old; explanations verbatim; grounding check rejects invented facts; the "took off" rule on real OpenAlex numbers</td></tr>
+<tr><td><code>SummarizerTest</code> (3)</td><td>Unit, offline</td><td>Sentence splitting; summaries verbatim and 20–60 words; boilerplate never chosen; thin text falls back</td></tr>
+<tr><td><code>RisingTest</code> (9)</td><td>Unit, offline</td><td>Trending page parsing; README quotes skip captions, badges and headings; growth evidence order; list kept unless new repos make it; every-3rd-morning schedule; eligibility; AI/ML classifier</td></tr>
+<tr><td><code>MigrationTest</code> (1)</td><td>Database</td><td>A v1 database upgrades to v2 with bookmarks and tracker intact</td></tr>
+<tr><td><code>AppUiTest</code> (10)</td><td>UI (Robolectric + Compose)</td><td>Home feed, topic filter, Rising on GitHub filters + details, AI Repos tab, AI tab + radar, 3-month timeline with sources, internship filter, job detail + assisted apply + tracker, bookmarks, onboarding</td></tr>
+<tr><td><code>ScreenshotTest</code></td><td>Visual (Roborazzi)</td><td>Renders screens (light/dark, intro, radar) to PNG for design review</td></tr>
+<tr><td><code>LiveSourcesTest</code></td><td>Integration, live</td><td>Every feed, job source and trending source responds with valid, dated items</td></tr>
+<tr><td><code>LiveTruthTest</code></td><td>End-to-end, live</td><td>The truth audit (Section 14), written to <code>testing/TRUTH_REPORT.md</code></td></tr>
+<tr><td><code>ScrollWhileRefreshingTest</code></td><td>Performance, live</td><td>Swipe latency during a real refresh</td></tr>
+<tr><td><code>RisingLiveTest</code></td><td>Integration, live</td><td>Runs the real Rising on GitHub update and checks every repo on github.com: link, description, README quote, weekly stars</td></tr>
+<tr><td><code>RadarMemoryProbe</code></td><td>Memory, live</td><td>Peak memory of radar mining with a 256 MB heap</td></tr>
+<tr><td><code>TrainSummarizerTest</code></td><td>Training</td><td>Rebuilds datasets, retrains, benchmarks; writes <code>ml/REPORT.md</code></td></tr>
+</table>
+<p><b>Why Robolectric?</b> It runs Android and Compose code on the PC's JVM, so UI tests run in seconds without an
+emulator (this PC didn't have the RAM for one). <b>Why live tests?</b> The app's correctness depends on external
+sources that change daily; only checking against the real internet proves the output is true today.
+Live tests are gated behind <code>LIVE=1</code> so normal runs stay fast and offline.</p>
+
+<!-- ============================================================ 16 -->
+<h1><span class="num">16</span>Security &amp; privacy</h1>
+<ul>
+<li><b>No backend, no analytics, no account.</b> Nothing about the user leaves the phone except requests to the sources listed below.</li>
+<li><b>Data sent out:</b> page/API requests to news sites, job APIs, arXiv, OpenAlex, Wikipedia, GitHub, PyPI, npm, Hugging Face; Google's favicon service for source icons; Gemini only if a key is set (article text, resume and job text for the AI features the user triggers).</li>
+<li><b>Keys</b> (Gemini, Adzuna, OpenAlex) are stored in app-private DataStore. Honest note: they are not additionally encrypted; <code>allowBackup=false</code> keeps them out of cloud backups.</li>
+<li><b>Resume</b> is stored in app-private storage; shared only through Android's share sheet via a FileProvider when the user taps "Share".</li>
+<li><b>Assisted apply never submits anything</b>; credentials are never handled by the app.</li>
+<li>The repository was scanned for secrets before publishing (no keys, tokens or signing keys committed).</li>
+<li>Release APK is signed with a personal debug key — fine for personal distribution; a Play Store release would need a proper upload key and Play App Signing.</li>
+</ul>
+
+<!-- ============================================================ 17 -->
+<h1><span class="num">17</span>Build, release &amp; GitHub</h1>
+<pre>gradlew assembleDebug                      # debug APK
+gradlew assembleRelease                    # R8-minified release APK (~3.9 MB)
+gradlew lintRelease                        # Android lint (0 errors)
+gradlew :app:testDebugUnitTest             # offline unit + UI tests
+set LIVE=1 &amp;&amp; gradlew :app:testDebugUnitTest   # + live audits
+set TRAIN=1 &amp;&amp; gradlew :app:testDebugUnitTest --tests "*TrainSummarizerTest*"   # retrain</pre>
+<ul>
+<li>Toolchain set up from scratch: JDK 21, Android SDK command-line tools (platform 35, build-tools 34), Gradle wrapper 8.11.1.</li>
+<li>Repository: <b>github.com/JiviteshKumar/sudo</b> (public). Releases with the APK: v1.0.0 (2 Oct) and v1.1.0 (5 Oct). The crash-during-refresh fix and the permanent radar history (commits of 6–7 Oct) are not in a release yet; that APK has only been built locally.</li>
+<li>Commit history was rewritten so every commit is authored with the email linked to the GitHub account, so contributions are credited to JiviteshKumar.</li>
+<li>Updates install over the previous version only if signed with the same key (<code>~/.android/debug.keystore</code>) — keep it backed up.</li>
+<li>Bundled fonts (Inter, Space Grotesk) are SIL Open Font License; license texts are included in <code>licenses/</code>.</li>
+</ul>
+
+<!-- ============================================================ 18 -->
+<h1 class="pb"><span class="num">18</span>Key decisions &amp; trade-offs</h1>
+<table>
+<tr><th style="width:23%">Decision</th><th style="width:30%">Alternatives</th><th>Why this one</th></tr>
+<tr><td>Extractive on-device summaries</td><td>Abstractive LLM (cloud or fine-tuned small model)</td><td>Cannot hallucinate; free; offline; fast; explainable. Cost: less fluent than rewritten text.</td></tr>
+<tr><td>Tiny MLP over hand-crafted features</td><td>BERT-style sentence encoder (e.g. ONNX)</td><td>12 KB vs tens of MB; ms inference; no ML runtime; features shared by training and app.</td></tr>
+<tr><td>Assisted apply</td><td>Fully automatic submission</td><td>Terms of service, CAPTCHAs, reliability, user control.</td></tr>
+<tr><td>No backend</td><td>Server that pre-fetches and serves</td><td>Zero cost, zero maintenance, privacy. Cost: each phone does its own work.</td></tr>
+<tr><td>Curated source list</td><td>Open web search / aggregator</td><td>Trust anchor; avoids fake news. Cost: coverage limited to chosen outlets.</td></tr>
+<tr><td>OpenAlex for "took off" + arXiv for activity</td><td>arXiv only; Google Trends; LLM judgement</td><td>OpenAlex has year-by-year counts across all scholarship; arXiv shows live activity; two sources cross-check each other; no hardcoding or guessing.</td></tr>
+<tr><td>Manual DI</td><td>Hilt / Koin</td><td>Small app; fewer moving parts; easy test injection.</td></tr>
+<tr><td>Room + Flow as single source of truth</td><td>In-memory caches</td><td>Offline reading, instant launch, reactive UI.</td></tr>
+<tr><td>Robolectric + live tests</td><td>Emulator/instrumented tests</td><td>Fast on a low-RAM PC; live tests verify truth, not just code.</td></tr>
+<tr><td>Native Kotlin</td><td>Flutter / React Native</td><td>Deep Android integration (WorkManager, widget, battery, notifications); performance. Cost: Android only.</td></tr>
+</table>
+
+<!-- ============================================================ 19 -->
+<h1><span class="num">19</span>Bugs found and how they were fixed</h1>
+<p>These came from testing the app's output against reality — great material for "tell me about a hard bug".</p>
+<table>
+<tr><th style="width:27%">Symptom</th><th style="width:35%">Root cause</th><th>Fix</th></tr>
+<tr><td>Some summaries not found on the article page</td><td>arXiv feeds prefix abstracts with "arXiv:… Announce Type: new Abstract:"</td><td>Strip feed-specific labels; audit checks both page and feed text</td></tr>
+<tr><td>Coupon posts shown as news</td><td>Wired publishes promo-code pages in its feed</td><td>Commerce filter (+ ticket/event promos)</td></tr>
+<tr><td>Different arXiv papers merged as one story</td><td>Research titles share vocabulary</td><td>Papers only cluster on identical titles</td></tr>
+<tr><td>"Accounting, Internal Controls" labelled internship</td><td>Regex matched "intern" inside "Internal"</td><td>Word boundaries; strong/weak/non-tech title rules</td></tr>
+<tr><td>Radar showed SDK, differential privacy, world models as new</td><td>Low-volume arXiv counts; booming old fields look new by ratio</td><td>OpenAlex "took off" rule with prior-presence limit; two-source age audit</td></tr>
+<tr><td>"API", "AI", "GPU" ranked as new terms</td><td>Baseline counted only long forms; recent corpus counted acronyms too</td><td>Count both forms in both corpora; 3× lift gate</td></tr>
+<tr><td>Textbook terms looked new one day</td><td>arXiv throttled bulk queries → baseline fell back to blog posts only</td><td>≥500-paper baseline gate; OpenAlex sampling; retries; pause instead of guess</td></tr>
+<tr><td>RLVR missed</td><td>A rare spelling was chosen to verify</td><td>Merge variants; verify the most-used spelling</td></tr>
+<tr><td>"isn't responding" while scrolling</td><td>Parsing and mining on the UI thread</td><td>Background dispatchers, flowOn, light projections</td></tr>
+<tr><td>App shut down during refresh</td><td>Out of memory: +142 MB radar mining on a 256 MB heap</td><td>Memory redesign (+77 MB), one-at-a-time lock, image cap</td></tr>
+<tr><td>A "we/our" detector never fired</td><td><code>"\b"</code> in a Kotlin string is a backspace, not a regex word boundary</td><td>Use <code>"\\b"</code>; scanned for similar bugs</td></tr>
+<tr><td>Onboarding didn't reach Home in tests</td><td>Navigation resumed off the main thread after a DataStore write</td><td>Navigate on <code>Dispatchers.Main</code></td></tr>
+<tr><td>Lint error blocked release</td><td>An invisible byte-order-mark character in source</td><td>Replaced with <code>Char(0xFEFF)</code></td></tr>
+</table>
+
+<!-- ============================================================ 20 -->
+<h1><span class="num">20</span>Limitations &amp; roadmap</h1>
+<h2>Known limitations (be upfront about these)</h2>
+<ul>
+<li>Android only; not on the Play Store yet (sideloaded APK, debug-signed).</li>
+<li>Can't fact-check publishers; coverage limited to the curated outlets.</li>
+<li>Taken-down jobs can remain visible for up to 3 days; an unreachable source's jobs disappear after 3 days.</li>
+<li>Job match vocabulary is a fixed list of 82 skills (explainable, but not learned).</li>
+<li>Tech-domain summariser test set is small (33 articles); OpenAlex's anonymous budget can run out on shared mobile IPs (optional free key).</li>
+<li>API keys are stored without extra encryption; <code>versionName</code> still reads 1.0.0; the latest fixes aren't in a GitHub release yet.</li>
+</ul>
+<h2>Roadmap ideas</h2>
+<ul>
+<li>Instant removal of taken-down jobs from employer boards; live check when opening a job.</li>
+<li>Learn the skills vocabulary from the radar and job data.</li>
+<li>Retrain the summariser regularly as tech data accumulates; explore a small on-device encoder.</li>
+<li>Android Autofill service for application forms; encrypted key storage; Play Store release with proper signing.</li>
+<li>Audio briefing, deadline calendar (hackathons, internship windows), iOS via Kotlin Multiplatform.</li>
+</ul>
+
+<!-- ============================================================ 21 -->
+<h1 class="pb"><span class="num">21</span>Interview questions — with answers</h1>
+
+<div class="qa"><div class="q">What is sudo, in one sentence?</div><div class="a">An Android app that gives you verified tech and AI news in 50-word summaries made on the phone, a self-updating Skills Radar of genuinely new AI/ML terms, and resume-matched jobs with assisted apply.</div></div>
+<div class="qa"><div class="q">Why did you build it?</div><div class="a">To stay current in a fast-moving field without doom-scrolling or trusting unverified sources — and to make job hunting faster by matching roles to my real skills.</div></div>
+<div class="qa"><div class="q">How do you make sure the app doesn't show fake or invented information?</div><div class="a">Four layers: curated sources only; strict acceptance rules (real dates, link must be on the publisher's own site, no promos); extractive summaries that are verbatim publisher sentences; and a live truth audit that re-checks headlines, links, summaries, job pages, trending items and radar terms against the original sources. Generated text is optional, labelled and grounding-checked.</div></div>
+<div class="qa"><div class="q">Why not just use an LLM to summarise?</div><div class="a">LLMs can hallucinate, cost money and need a network. My use case needs ~50 faithful words, which sentence selection does perfectly. An LLM is offered as an option, constrained to the source text and labelled.</div></div>
+<div class="qa"><div class="q">Describe your model.</div><div class="a">An extractive sentence scorer: 20 hand-crafted features (position, length, title overlap, centroid similarity, TextRank, boilerplate flags…) into a 24-unit tanh MLP with a sigmoid output — 529 parameters. The top sentences are chosen within a 50-word budget with trigram blocking.</div></div>
+<div class="qa"><div class="q">How did you get labels for training?</div><div class="a">Oracle labelling: for each article I greedily selected the 1–3 sentences that maximise ROUGE-1 + ROUGE-2 against a human reference (CNN journalist highlights, or the publisher's own summary line for tech articles). Those sentences are positives.</div></div>
+<div class="qa"><div class="q">How did you evaluate it, and is it good?</div><div class="a">ROUGE F1 on held-out test sets against Lead, TextRank and the oracle ceiling. It beats Lead on both: 28.4 vs 27.4 ROUGE-1 on tech, 33.0 vs 31.6 on CNN. Lead is a notoriously strong baseline in news; the tech test set is small, so I describe that result as encouraging.</div></div>
+<div class="qa"><div class="q">How did you avoid train/serve skew?</div><div class="a">The feature code is one Kotlin file used by both the training job (run as a JVM test) and the app at inference. The trained weights are exported as JSON into the app's assets.</div></div>
+<div class="qa"><div class="q">How does the Skills Radar decide a term is new?</div><div class="a">Discovery: acronyms learned via the Schwartz–Hearst algorithm plus title phrases, kept if ≥3× more frequent than in papers from 6–18 months ago. Verification: OpenAlex's year-by-year publication counts must show the term took off within 3 years with almost no presence 5–10 years earlier; it must have ≥5 arXiv papers in the last 30 days and still be growing. It's then explained with a quoted source.</div></div>
+<div class="qa"><div class="q">How do you handle a phrase that existed before with a different meaning?</div><div class="a">I don't use "first appearance". I measure when volume surged above the phrase's own historical baseline (5× the median of years 5–10 ago). "Flow matching" had ~20 unrelated uses a year, then jumped to 315 in 2024 — so it's dated 2024.</div></div>
+<div class="qa"><div class="q">What if your data sources are down or rate-limited?</div><div class="a">The radar never guesses: it requires a minimum-size research corpus, retries arXiv with backoff (falling back to OpenAlex), detects OpenAlex budget exhaustion, and pauses with a visible message. Unchecked terms are neither passed nor rejected.</div></div>
+<div class="qa"><div class="q">What was the hardest bug?</div><div class="a">The app being killed while scrolling during a refresh. I reproduced it by running the radar's mining on real data with a 256 MB heap: +142 MB. I redesigned the mining (excluded job ads, acronym-only token index, int-array postings, SQL-trimmed text), serialised heavy jobs with a mutex on background-priority threads and capped the image cache — +77 MB with twice the data, and a test showing 992 swipes during a live refresh with a 25 ms p95.</div></div>
+<div class="qa"><div class="q">How does background refresh work on Android?</div><div class="a">WorkManager periodic work every 15 minutes (the minimum) with a network constraint. Doze can defer it, so the app requests a battery-optimisation exemption. Opening the app shows cached data and only catches up silently if the worker hasn't run recently.</div></div>
+<div class="qa"><div class="q">Why Kotlin and Compose?</div><div class="a">Native access to WorkManager, notifications, widgets and battery settings; performance for long lists; and the core logic runs unchanged in JVM tests. Compose made the animated, gradient-heavy UI straightforward.</div></div>
+<div class="qa"><div class="q">How is the job match score computed?</div><div class="a">Skills mentioned in the job (from an 82-skill vocabulary with aliases) are compared with the user's; score = matched ÷ min(required, 10). It's deterministic and explainable. An optional Gemini analysis adds a holistic view.</div></div>
+<div class="qa"><div class="q">Why not auto-apply to jobs?</div><div class="a">It violates job-site terms, breaks on CAPTCHAs and custom forms, and removes the user's review. Assisted apply gets 90% of the speed safely.</div></div>
+<div class="qa"><div class="q">How do you keep the app responsive?</div><div class="a">No heavy work on the UI thread; a dedicated two-thread dispatcher at background priority; a mutex so heavy phases don't overlap; flowOn for list transforms; light DB projections; capped image memory. Verified with a swipe-latency test during a live refresh.</div></div>
+<div class="qa"><div class="q">How do you test something that depends on the live internet?</div><div class="a">Pure logic is unit-tested offline with fixtures; UI is tested with Robolectric against a seeded in-memory database; and live, opt-in tests run the real pipelines and verify the output against the sources, reporting unverifiable cases instead of passing them.</div></div>
+<div class="qa"><div class="q">How does "Rising on GitHub" know a repo is rising, not just big?</div><div class="a">It ranks by stars gained per day, never by total stars: GitHub Trending's own weekly count, else the gain sudo measured between two of its checks, else a new repo's average since launch. Each card names its source. The list is renewed every 3rd morning only if a different set of repos makes the top 15.</div></div>
+<div class="qa"><div class="q">What would you do with more time?</div><div class="a">Instant removal of taken-down jobs, a learned skills vocabulary, a Play Store release with proper signing, encrypted key storage, more tech training data, and an Autofill service for job forms.</div></div>
+<div class="qa"><div class="q">Is there anything hardcoded?</div><div class="a">The list of trusted outlets and job boards (deliberately — it's the trust anchor), the 82-skill vocabulary for match scores, and thresholds (e.g. 3× lift, 3-year window). Terms, trends and explanations are all derived from live data.</div></div>
+
+<!-- ============================================================ 22 -->
+<h1><span class="num">22</span>Glossary</h1>
+<table>
+<tr><th style="width:25%">Term</th><th>Meaning</th></tr>
+<tr><td>ANR</td><td>"Application Not Responding" — Android's dialog when the UI thread is blocked ~5 s.</td></tr>
+<tr><td>arXiv</td><td>Open repository of research preprints; its API gives counts and abstracts.</td></tr>
+<tr><td>OpenAlex</td><td>Open catalogue of hundreds of millions of scholarly works; used for year-by-year publication counts and paper samples.</td></tr>
+<tr><td>Extractive summarization</td><td>Summarising by selecting existing sentences (vs abstractive: writing new ones).</td></tr>
+<tr><td>ROUGE-1 / -2 / -L</td><td>Overlap of words / word pairs / longest common subsequence between a summary and a reference.</td></tr>
+<tr><td>Oracle</td><td>The best possible extractive selection given the reference — an upper bound and a labelling method.</td></tr>
+<tr><td>TextRank</td><td>Graph-based ranking of sentences by similarity (PageRank on sentences).</td></tr>
+<tr><td>Lead baseline</td><td>Taking the first sentences of an article.</td></tr>
+<tr><td>Schwartz–Hearst</td><td>Algorithm that finds abbreviation definitions like "long form (SF)" in text.</td></tr>
+<tr><td>Lift</td><td>How many times more frequent a term is now than in a baseline.</td></tr>
+<tr><td>Grounding check</td><td>Verifying generated text only contains facts present in its sources.</td></tr>
+<tr><td>Train/serve skew</td><td>Differences between how features are computed in training vs production.</td></tr>
+<tr><td>WorkManager</td><td>Android library for deferrable, guaranteed background work.</td></tr>
+<tr><td>Doze</td><td>Android's power-saving mode that defers background work.</td></tr>
+<tr><td>Room / DAO</td><td>Android's SQLite layer / the interface defining its queries.</td></tr>
+<tr><td>Compose / recomposition</td><td>Declarative UI toolkit / re-running UI functions when state changes.</td></tr>
+<tr><td>StateFlow / flowOn</td><td>Observable state stream / moving a stream's work to another thread pool.</td></tr>
+<tr><td>R8</td><td>Android's code shrinker and optimiser for release builds.</td></tr>
+<tr><td>Robolectric</td><td>Runs Android code on the JVM for fast tests.</td></tr>
+<tr><td>Custom Tabs</td><td>In-app Chrome tabs that share the browser's logins.</td></tr>
+<tr><td>Rate limit / 429</td><td>A server's cap on requests; HTTP 429 means "Too Many Requests".</td></tr>
+</table>
+<p class="small" style="margin-top:6mm">Generated from the sudo codebase (commit c90372e and later), <code>ml/REPORT.md</code> and
+<code>testing/TRUTH_REPORT.md</code>. Built with Claude Code.</p>
+
+</body>
+</html>

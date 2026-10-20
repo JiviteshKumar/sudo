@@ -170,8 +170,9 @@ class NewsRepository(
         val jobs = listOf(
             "models" to async { runCatching { TrendingSources.hfModels() } },
             "papers" to async { runCatching { TrendingSources.hfPapers() } },
-            "repos" to async { runCatching { TrendingSources.githubRepos() } },
         )
+        // GitHub repos now live in "Rising on GitHub" (its AI/ML list feeds the Repos tab).
+        db.trending().clear("repos")
         for ((kind, deferred) in jobs) {
             val items = deferred.await().getOrNull()?.takeIf { it.isNotEmpty() } ?: continue
             db.trending().clear(kind)

@@ -7,6 +7,7 @@ import com.technewz.app.data.AppDatabase
 import com.technewz.app.data.JobsRepository
 import com.technewz.app.data.NewsRepository
 import com.technewz.app.data.SettingsRepository
+import com.technewz.app.util.Text
 import com.technewz.app.widget.HeadlinesWidget
 import com.technewz.app.work.Notifications
 import com.technewz.app.work.RefreshWorker
@@ -25,6 +26,7 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
     val news = NewsRepository(context, db, settings, ai)
     val jobs = JobsRepository(context, db, settings)
     val radar = com.technewz.app.data.RadarRepository(context, db, settings, ai)
+    val rising = com.technewz.app.data.RisingRepository(db, settings)
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val refreshMutex = Mutex()
@@ -84,6 +86,39 @@ class AppContainer(private val context: Context, val db: AppDatabase = AppDataba
             "Couldn't refresh the radar: ${e.message ?: "network error"}"
         } finally {
             _radarProgress.value = null
+        }
+    }
+
+    private val _checkingRising = MutableStateFlow(false)
+    /** True while "Rising on GitHub" is being checked. */
+    val checkingRising: StateFlow<Boolean> = _checkingRising
+    private val risingMutex = Mutex()
+
+    /**
+     * Updates "Rising on GitHub". [manual] = the user tapped "Check now" (at most once an hour);
+     * otherwise only the scheduled every-3rd-morning update runs. Returns a message for the UI, or null.
+     */
+    suspend fun refreshRising(manual: Boolean): String? {
+        if (!risingMutex.tryLock()) return null
+        _checkingRising.value = true
+        return try {
+            if (manual) {
+                val last = settings.current().lastRisingCheck
+                val wait = 60 - (System.currentTimeMillis() - last) / 60_000
+                if (wait > 0) return "Checked ${Text.timeAgo(last)} — GitHub allows a new check in $wait min"
+            }
+            val r = (if (manual) rising.refresh(scheduled = false) else rising.refreshIfDue()) ?: return null
+            when {
+                r.limited -> "GitHub's free hourly limit was reached — the list is kept as it is and checked again later"
+                r.unreachable -> "Couldn't reach GitHub — the list is kept as it is"
+                r.added.isNotEmpty() -> "Rising on GitHub: ${r.added.size} new — " + r.added.take(2).joinToString(", ") { it.substringAfter('/') }
+                else -> "No new repos made the list — it stays the same"
+            }
+        } catch (e: Exception) {
+            "Couldn't check GitHub: ${e.message ?: "network error"}"
+        } finally {
+            _checkingRising.value = false
+            risingMutex.unlock()
         }
     }
 

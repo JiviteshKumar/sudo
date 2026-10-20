@@ -339,27 +339,6 @@ object TrendingSources {
         }.distinctBy { it.id }.sortedByDescending { it.metric.removePrefix("▲ ").toIntOrNull() ?: 0 }
     }
 
-    suspend fun githubRepos(): List<Item> {
-        val since = java.time.LocalDate.now().minusDays(30).toString()
-        val topics = listOf("llm", "machine-learning")
-        return topics.flatMap { t ->
-            val raw = Http.get(
-                "https://api.github.com/search/repositories?q=${enc("topic:$t created:>$since")}&sort=stars&order=desc&per_page=10",
-                mapOf("Accept" to "application/vnd.github+json"),
-            )
-            AppJson.parseToJsonElement(raw).jsonObject["items"]?.jsonArray.orEmptyList().mapNotNull { el ->
-                val o = el.jsonObject
-                (o.l("stargazers_count") ?: 0) to Item(
-                    id = o.s("full_name"), title = o.s("full_name"),
-                    subtitle = listOf(o.s("language"), o.s("description").take(90)).filter { it.isNotBlank() }.joinToString(" · "),
-                    url = o.s("html_url"), metric = "★ ${(o.l("stargazers_count") ?: 0).human()}",
-                )
-            }
-        }.distinctBy { it.second.id }.sortedByDescending { it.first }.map { it.second }.take(15)
-    }
-
-    private fun JsonArray?.orEmptyList(): List<JsonElement> = this ?: emptyList()
-
     private fun Long.human(): String = when {
         this >= 1_000_000 -> String.format(Locale.US, "%.1fM", this / 1_000_000.0)
         this >= 1_000 -> String.format(Locale.US, "%.1fk", this / 1_000.0)

@@ -102,7 +102,6 @@ class LiveSourcesTest {
         listOf<Pair<String, suspend () -> List<TrendingSources.Item>>>(
             "HF models" to { TrendingSources.hfModels() },
             "HF papers" to { TrendingSources.hfPapers() },
-            "GitHub repos" to { TrendingSources.githubRepos() },
         ).forEach { (name, f) ->
             val items = runCatching { f() }.getOrElse { println("FAIL $name: ${it.message}"); emptyList() }
             println("$name: ${items.size}")

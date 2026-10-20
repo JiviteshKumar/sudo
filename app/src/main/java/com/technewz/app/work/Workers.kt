@@ -24,7 +24,8 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         // One heavy job at a time, so memory peaks never stack (the radar takes the lock itself).
         val news = runCatching { HeavyWork.lock.withLock { c.news.refresh() } }
         runCatching { HeavyWork.lock.withLock { c.jobs.refresh(force = false) } }
-        runCatching { c.radar.refresh(force = false) } // self-throttles to twice a day
+        runCatching { c.radar.refresh(force = false) } // self-throttles to every 3 hours
+        runCatching { c.refreshRising(manual = false) } // runs only when its every-3rd-morning update is due
         runCatching { HeadlinesWidget.updateAll(applicationContext) }
         return if (news.isSuccess || runAttemptCount >= 2) Result.success() else Result.retry()
     }
