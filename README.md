@@ -1,5 +1,7 @@
 # sudo
 
+**[⬇ Download sudo.apk](https://github.com/JiviteshKumar/sudo/releases/latest/download/sudo.apk)**: the latest version for Android 8.0 and up. Open it on your phone to install, and allow "install unknown apps" if asked. It updates over earlier versions and keeps your bookmarks and tracker.
+
 An Android app for tech, AI/ML and data news from vetted sources, plus jobs and internships matched to your resume.
 
 ## Features
@@ -32,9 +34,7 @@ An Android app for tech, AI/ML and data news from vetted sources, plus jobs and 
 
 ## Setup
 
-1. Install the APK:
-   - Debug build: `app/build/outputs/apk/debug/app-debug.apk`
-   - Release build: `app/build/outputs/apk/release/app-release.apk`
+1. Install the APK: [download sudo.apk](https://github.com/JiviteshKumar/sudo/releases/latest/download/sudo.apk) from the latest release, or build it yourself (see Build).
 2. Optional: get a free **Gemini API key** at https://aistudio.google.com/apikey and paste it in onboarding or Settings. It enables AI summaries, "why it matters", resume reading, match analysis and cover letters.
 3. Optional: get free **Adzuna** keys at https://developer.adzuna.com for the widest coverage of local on-site jobs (19 countries, including India).
 4. Upload your resume PDF under Profile, which is the avatar in the top right.
