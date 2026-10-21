@@ -15,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.technewz.app.data.ArticleEntity
@@ -33,6 +35,7 @@ import com.technewz.app.ui.screens.JobCard
 import com.technewz.app.ui.screens.NewsCard
 import com.technewz.app.ui.screens.NewsHeader
 import com.technewz.app.ui.screens.StoryCluster
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -44,6 +47,25 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(application = Application::class, sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
 class ScreenshotTest {
+    @get:Rule val rule = createComposeRule()
+
+    /**
+     * Renders [content] with the Compose clock paused and captures it. LiveDot, Shimmer and the onboarding cursor
+     * animate forever, so a free-running clock never lets Compose go idle and the capture waits forever. Instead the
+     * clock is stepped by hand to [atMs] (2.4 s: LiveDot mid-pulse, cursor visible), with short real-time pauses so
+     * network favicons can land.
+     */
+    private fun snap(path: String, atMs: Long = 2_400, content: @Composable () -> Unit) {
+        rule.mainClock.autoAdvance = false
+        rule.setContent(content)
+        repeat((atMs / 100).toInt()) {
+            rule.mainClock.advanceTimeBy(100)
+            Thread.sleep(100)
+        }
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage(path)
+    }
+
     private val now = System.currentTimeMillis()
     private val profile = Profile(fullName = "Jivitesh Kumar", skills = listOf("Python", "PyTorch", "SQL", "React"))
 
@@ -150,11 +172,11 @@ class ScreenshotTest {
         score = 5.0, checkedAt = now, discoveredAt = now,
     )
 
-    @Test fun introMidway() = captureRoboImage("build/screens/intro.png") {
+    @Test fun introMidway() = snap("build/screens/intro.png") {
         TechNewzTheme(ThemeMode.DARK) { com.technewz.app.ui.IntroScreen(frozenAtMs = 1900f) {} }
     }
 
-    @Test fun brand() = captureRoboImage("build/screens/brand.png") {
+    @Test fun brand() = snap("build/screens/brand.png") {
         val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()
         val c = AppContainer(app, androidx.room.Room.inMemoryDatabaseBuilder(app, com.technewz.app.data.AppDatabase::class.java).build())
         TechNewzTheme(ThemeMode.DARK) {
@@ -169,7 +191,7 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun radarLight() = captureRoboImage("build/screens/radar_light.png") {
+    @Test fun radarLight() = snap("build/screens/radar_light.png") {
         TechNewzTheme(ThemeMode.LIGHT) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 Column(Modifier.padding(top = 24.dp)) { com.technewz.app.ui.screens.TermCard(vla, emptyList()) }
@@ -177,7 +199,7 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun risingLight() = captureRoboImage("build/screens/rising_light.png") {
+    @Test fun risingLight() = snap("build/screens/rising_light.png") {
         TechNewzTheme(ThemeMode.LIGHT) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 Column(Modifier.padding(top = 24.dp)) {
@@ -189,8 +211,8 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun pulseLight() = captureRoboImage("build/screens/pulse_light.png") { Frame(ThemeMode.LIGHT, 0) { Feed() } }
-    @Test fun pulseDark() = captureRoboImage("build/screens/pulse_dark.png") { Frame(ThemeMode.DARK, 0) { Feed() } }
-    @Test fun jobsLight() = captureRoboImage("build/screens/jobs_light.png") { Frame(ThemeMode.LIGHT, 2) { Jobs() } }
-    @Test fun jobsDark() = captureRoboImage("build/screens/jobs_dark.png") { Frame(ThemeMode.DARK, 2) { Jobs() } }
+    @Test fun pulseLight() = snap("build/screens/pulse_light.png") { Frame(ThemeMode.LIGHT, 0) { Feed() } }
+    @Test fun pulseDark() = snap("build/screens/pulse_dark.png") { Frame(ThemeMode.DARK, 0) { Feed() } }
+    @Test fun jobsLight() = snap("build/screens/jobs_light.png") { Frame(ThemeMode.LIGHT, 2) { Jobs() } }
+    @Test fun jobsDark() = snap("build/screens/jobs_dark.png") { Frame(ThemeMode.DARK, 2) { Jobs() } }
 }
